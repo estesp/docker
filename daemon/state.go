@@ -113,9 +113,9 @@ func (s *State) WaitStop(timeout time.Duration) (int, error) {
 }
 
 func (s *State) IsRunning() bool {
-	s.Lock()
+	//s.Lock()
 	res := s.Running
-	s.Unlock()
+	//s.Unlock()
 	return res
 }
 

@@ -17,6 +17,7 @@ func (daemon *Daemon) ContainerRm(job *engine.Job) engine.Status {
 	removeVolume := job.GetenvBool("removeVolume")
 	removeLink := job.GetenvBool("removeLink")
 	forceRemove := job.GetenvBool("forceRemove")
+	fromStopped := job.GetenvBool("fromStopped")
 
 	container, err := daemon.Get(name)
 	if err != nil {
@@ -52,7 +53,7 @@ func (daemon *Daemon) ContainerRm(job *engine.Job) engine.Status {
 		// stop collection of stats for the container regardless
 		// if stats are currently getting collected.
 		daemon.statsCollector.stopCollection(container)
-		if container.IsRunning() {
+		if !fromStopped && container.IsRunning() {
 			if forceRemove {
 				if err := container.Kill(); err != nil {
 					return job.Errorf("Could not kill running container, cannot remove - %v", err)

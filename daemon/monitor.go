@@ -113,6 +113,9 @@ func (m *containerMonitor) Start() error {
 			m.container.Lock()
 			m.container.setStopped(&exitStatus)
 			defer m.container.Unlock()
+			if m.container.Config.RemoveOnExit {
+				m.container.Delete()
+			}
 		}
 		m.Close()
 	}()

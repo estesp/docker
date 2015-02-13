@@ -750,6 +750,20 @@ func (container *Container) Restart(seconds int) error {
 	return container.Start()
 }
 
+// If the container's "RemoveOnExit" flag is set (e.g. via --rm on docker run)
+// then we want to trigger a deletion job when the container exits
+func (container *Container) Delete() error {
+	job := container.daemon.eng.Job("rm", container.ID)
+	// setting the flags exactly as the client-side --rm used to do:
+	job.Setenv("removeVolume", "1")
+	// prevent "isRunning()" lock contention
+	job.Setenv("fromStopped", "1")
+	if err := job.Run(); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (container *Container) Resize(h, w int) error {
 	if !container.IsRunning() {
 		return fmt.Errorf("Cannot resize container %s, container is not running", container.ID)

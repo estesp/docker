@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"runtime"
+	"syscall"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/builder"
@@ -18,7 +21,7 @@ import (
 	"github.com/docker/docker/engine"
 	"github.com/docker/docker/pkg/homedir"
 	flag "github.com/docker/docker/pkg/mflag"
-	"github.com/docker/docker/pkg/signal"
+	signl "github.com/docker/docker/pkg/signal"
 	"github.com/docker/docker/registry"
 	"github.com/docker/docker/utils"
 )
@@ -81,7 +84,17 @@ func mainDaemon() {
 		return
 	}
 	eng := engine.New()
-	signal.Trap(eng.Shutdown)
+	signl.Trap(eng.Shutdown)
+	go func() {
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGQUIT)
+		buf := make([]byte, 1<<20)
+		for {
+			<-sigs
+			runtime.Stack(buf, true)
+			log.Printf("=== received SIGQUIT ===\n*** goroutine dump...\n%s\n*** end\n", buf)
+		}
+	}()
 
 	if err := migrateKey(); err != nil {
 		log.Fatal(err)

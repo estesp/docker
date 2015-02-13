@@ -2209,15 +2209,13 @@ func (cli *DockerCli) CmdRun(args ...string) error {
 
 	// These are flags not stored in Config/HostConfig
 	var (
-		flAutoRemove = cmd.Bool([]string{"#rm", "-rm"}, false, "Automatically remove the container when it exits")
-		flDetach     = cmd.Bool([]string{"d", "-detach"}, false, "Run container in background and print container ID")
-		flSigProxy   = cmd.Bool([]string{"#sig-proxy", "-sig-proxy"}, true, "Proxy received signals to the process")
-		flName       = cmd.String([]string{"#name", "-name"}, "", "Assign a name to the container")
-		flAttach     *opts.ListOpts
+		flDetach   = cmd.Bool([]string{"d", "-detach"}, false, "Run container in background and print container ID")
+		flSigProxy = cmd.Bool([]string{"#sig-proxy", "-sig-proxy"}, true, "Proxy received signals to the process")
+		flName     = cmd.String([]string{"#name", "-name"}, "", "Assign a name to the container")
+		flAttach   *opts.ListOpts
 
 		ErrConflictAttachDetach               = fmt.Errorf("Conflicting options: -a and -d")
 		ErrConflictRestartPolicyAndAutoRemove = fmt.Errorf("Conflicting options: --restart and --rm")
-		ErrConflictDetachAutoRemove           = fmt.Errorf("Conflicting options: --rm and -d")
 	)
 
 	config, hostConfig, cmd, err := runconfig.Parse(cmd, args)
@@ -2240,9 +2238,6 @@ func (cli *DockerCli) CmdRun(args ...string) error {
 			if flAttach.Len() != 0 {
 				return ErrConflictAttachDetach
 			}
-		}
-		if *flAutoRemove {
-			return ErrConflictDetachAutoRemove
 		}
 
 		config.AttachStdin = false
@@ -2281,7 +2276,7 @@ func (cli *DockerCli) CmdRun(args ...string) error {
 		}()
 	}
 
-	if *flAutoRemove && (hostConfig.RestartPolicy.Name == "always" || hostConfig.RestartPolicy.Name == "on-failure") {
+	if config.RemoveOnExit && (hostConfig.RestartPolicy.Name == "always" || hostConfig.RestartPolicy.Name == "on-failure") {
 		return ErrConflictRestartPolicyAndAutoRemove
 	}
 
@@ -2372,31 +2367,16 @@ func (cli *DockerCli) CmdRun(args ...string) error {
 	var status int
 
 	// Attached mode
-	if *flAutoRemove {
-		// Autoremove: wait for the container to finish, retrieve
-		// the exit code and remove the container
-		if _, _, err := readBody(cli.call("POST", "/containers/"+runResult.Get("Id")+"/wait", nil, false)); err != nil {
-			return err
-		}
-		if _, status, err = getExitCode(cli, runResult.Get("Id")); err != nil {
-			return err
-		}
-		if _, _, err := readBody(cli.call("DELETE", "/containers/"+runResult.Get("Id")+"?v=1", nil, false)); err != nil {
+	if !config.Tty {
+		// In non-TTY mode, we can't detach, so we must wait for container exit
+		if status, err = waitForExit(cli, runResult.Get("Id")); err != nil {
 			return err
 		}
 	} else {
-		// No Autoremove: Simply retrieve the exit code
-		if !config.Tty {
-			// In non-TTY mode, we can't detach, so we must wait for container exit
-			if status, err = waitForExit(cli, runResult.Get("Id")); err != nil {
-				return err
-			}
-		} else {
-			// In TTY mode, there is a race: if the process dies too slowly, the state could
-			// be updated after the getExitCode call and result in the wrong exit code being reported
-			if _, status, err = getExitCode(cli, runResult.Get("Id")); err != nil {
-				return err
-			}
+		// In TTY mode, there is a race: if the process dies too slowly, the state could
+		// be updated after the getExitCode call and result in the wrong exit code being reported
+		if _, status, err = getExitCode(cli, runResult.Get("Id")); err != nil {
+			return err
 		}
 	}
 	if status != 0 {
