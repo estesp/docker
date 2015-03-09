@@ -48,6 +48,7 @@ weight=1
       --mtu=0                                Set the containers network MTU
       -p, --pidfile="/var/run/docker.pid"    Path to use for daemon PID file
       --registry-mirror=[]                   Preferred Docker registry mirror
+      --root=""                              Set root user/uid remap option
       -s, --storage-driver=""                Storage driver to use
       --selinux-enabled=false                Enable selinux support
       --storage-opt=[]                       Set storage driver options
@@ -401,6 +402,40 @@ This example sets the execdriver to `cgroupfs`:
     $ sudo docker daemon --exec-opt native.cgroupdriver=cgroupfs
 
 Setting this option applies to all containers the daemon launches.
+
+### Daemon user namespace support
+
+Linux kernel user namespace support provides additional security by allowing
+the user and group IDs inside a user namespace to not match the same IDs on the
+Docker host.  Currently the Docker daemon only allows remapping the root user.
+Using the `--root` option available on the Docker daemon, you can choose to
+remap a container's root user to an unprivileged user on the Docker host.
+The daemon's namespace configuration applies to all containers the daemon runs;
+you cannot remap on a per-container basis.
+
+> **Note**: The restriction that user namespace maps are per-daemon relates to
+> the sharing of image layers across all containers on a Docker host. Since
+> file ownership must match the new mapping of user and group IDs, each layer
+> for that Docker daemon will be remapped to the proper ownership.
+
+To enable user namespace support, provide a `username` or `uid:gid` to the
+`--root` flag. If you want the daemon to create and use a default user
+for the remapped root, specify `default` instead. When you specify `default`, the daemon
+creates a user and group named `dockroot` (if they don't already exist). Then,
+the daemon uses `dockroot`'s uid and gid for the remapped root values inside all containers
+for that daemon instance.
+
+Example relying on default Docker username management:
+
+    $ sudo docker -d --root default
+
+Example using pre-existing username/group combination:
+
+    $ sudo docker -d ---root=cntrroot
+
+Example using a Linux uid:gid combination:
+
+    $ sudo docker -d --root 1001:1001
 
 ## Daemon DNS options
 
