@@ -5,24 +5,38 @@ import (
 	"os"
 	"path"
 
+	"github.com/docker/libcontainer/configs"
+	"github.com/docker/libcontainer/label"
+
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/chrootarchive"
-	"github.com/docker/libcontainer/label"
+	"github.com/docker/docker/pkg/idtools"
 )
 
 func init() {
 	graphdriver.Register("vfs", Init)
 }
 
-func Init(home string, options []string) (graphdriver.Driver, error) {
+func Init(home string, options []string, uidMaps, gidMaps []configs.IDMap) (graphdriver.Driver, error) {
 	d := &Driver{
-		home: home,
+		home:    home,
+		uidMaps: uidMaps,
+		gidMaps: gidMaps,
 	}
-	return graphdriver.NaiveDiffDriver(d), nil
+	rootUid, rootGid, err := idtools.GetRootUidGid(uidMaps, gidMaps)
+	if err != nil {
+		return nil, err
+	}
+	if err := idtools.MkdirAllAs(home, 0700, rootUid, rootGid); err != nil {
+		return nil, err
+	}
+	return graphdriver.NaiveDiffDriver(d, uidMaps, gidMaps), nil
 }
 
 type Driver struct {
-	home string
+	home    string
+	uidMaps []configs.IDMap
+	gidMaps []configs.IDMap
 }
 
 func (d *Driver) String() string {
@@ -39,10 +53,14 @@ func (d *Driver) Cleanup() error {
 
 func (d *Driver) Create(id, parent string) error {
 	dir := d.dir(id)
-	if err := os.MkdirAll(path.Dir(dir), 0700); err != nil {
+	rootUid, rootGid, err := idtools.GetRootUidGid(d.uidMaps, d.gidMaps)
+	if err != nil {
 		return err
 	}
-	if err := os.Mkdir(dir, 0755); err != nil {
+	if err := idtools.MkdirAllAs(path.Dir(dir), 0700, rootUid, rootGid); err != nil {
+		return err
+	}
+	if err := idtools.MkdirAs(dir, 0755, rootUid, rootGid); err != nil {
 		return err
 	}
 	opts := []string{"level:s0"}

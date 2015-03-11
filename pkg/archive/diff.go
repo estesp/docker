@@ -11,11 +11,12 @@ import (
 
 	"github.com/docker/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
 
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/pools"
 	"github.com/docker/docker/pkg/system"
 )
 
-func UnpackLayer(dest string, layer ArchiveReader) (size int64, err error) {
+func UnpackLayer(dest string, layer ArchiveReader, options *TarOptions) (size int64, err error) {
 	tr := tar.NewReader(layer)
 	trBuf := pools.BufioReader32KPool.Get(tr)
 	defer pools.BufioReader32KPool.Put(trBuf)
@@ -125,6 +126,22 @@ func UnpackLayer(dest string, layer ArchiveReader) (size int64, err error) {
 				srcData = tmpFile
 			}
 
+			//if options has a specific uid/gid, then set the hdr uid/gid so that
+			//the Lchown sets the ownership as requested
+			if options.UidMaps != nil {
+				xUid, err := idtools.TranslateIDToHost(srcHdr.Uid, options.UidMaps)
+				if err != nil {
+					return 0, err
+				}
+				srcHdr.Uid = xUid
+			}
+			if options.GidMaps != nil {
+				xGid, err := idtools.TranslateIDToHost(srcHdr.Gid, options.GidMaps)
+				if err != nil {
+					return 0, err
+				}
+				srcHdr.Gid = xGid
+			}
 			if err := createTarFile(path, dest, srcHdr, srcData, true); err != nil {
 				return 0, err
 			}
@@ -165,5 +182,5 @@ func ApplyLayer(dest string, layer ArchiveReader) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return UnpackLayer(dest, layer)
+	return UnpackLayer(dest, layer, &TarOptions{})
 }

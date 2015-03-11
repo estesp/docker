@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/docker/libcontainer/configs"
 	"github.com/docker/libcontainer/label"
 
 	log "github.com/Sirupsen/logrus"
@@ -31,7 +32,9 @@ import (
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/broadcastwriter"
 	"github.com/docker/docker/pkg/common"
+	"github.com/docker/docker/pkg/directory"
 	"github.com/docker/docker/pkg/graphdb"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/namesgenerator"
 	"github.com/docker/docker/pkg/networkfs/resolvconf"
@@ -106,6 +109,8 @@ type Daemon struct {
 	trustStore       *trust.TrustStore
 	statsCollector   *statsCollector
 	defaultLogConfig runconfig.LogConfig
+	uidMaps          []configs.IDMap
+	gidMaps          []configs.IDMap
 }
 
 // Install installs daemon capabilities to eng.
@@ -664,7 +669,11 @@ func (daemon *Daemon) newContainer(name string, config *runconfig.Config, imgID 
 func (daemon *Daemon) createRootfs(container *Container) error {
 	// Step 1: create the container directory.
 	// This doubles as a barrier to avoid race conditions.
-	if err := os.Mkdir(container.root, 0700); err != nil {
+	rootUid, rootGid, err := idtools.GetRootUidGid(daemon.uidMaps, daemon.gidMaps)
+	if err != nil {
+		return err
+	}
+	if err := idtools.MkdirAs(container.root, 0700, rootUid, rootGid); err != nil {
 		return err
 	}
 	initID := fmt.Sprintf("%s-init", container.ID)
@@ -838,7 +847,30 @@ func NewDaemonFromDirectory(config *Config, eng *engine.Engine) (*Daemon, error)
 		return nil, err
 	}
 
-	// set up the TempDir to use a canonical path
+	// if the daemon was started with remapped root option, parse
+	// the config option to the int uid,gid values
+	var (
+		uidMaps, gidMaps []configs.IDMap
+		rootUid, rootGid int
+	)
+	if config.RemappedRoot != "" {
+		uid, gid, err := parseRemappedRoot(config.RemappedRoot)
+		if err != nil {
+			return nil, err
+		}
+		rootUid = uid
+		rootGid = gid
+		log.Infof("User namespaces: root will be remapped to uid:gid: %d:%d", uid, gid)
+
+		if uMaps, gMaps, err := idtools.CreateIDMapsForRoot(uid, gid); err != nil {
+			return nil, fmt.Errorf("Can't create ID mappings for remapped root: %v", err)
+		} else {
+			uidMaps = uMaps
+			gidMaps = gMaps
+		}
+	}
+
+	// set up the tmpDir to use a canonical path
 	tmp, err := utils.TempDir(config.Root)
 	if err != nil {
 		return nil, fmt.Errorf("Unable to get the TempDir under %s: %s", config.Root, err)
@@ -859,17 +891,61 @@ func NewDaemonFromDirectory(config *Config, eng *engine.Engine) (*Daemon, error)
 			return nil, fmt.Errorf("Unable to get the full path to root (%s): %s", config.Root, err)
 		}
 	}
-	config.Root = realRoot
+
+	// the main docker root needs to be accessible by all users, as user namespace support
+	// will create subdirectories owned by either a) the real system root (when no remapping
+	// is setup) or b) the remapped root host ID (when --root=uid:gid is used)
+	// for "first time" users of user namespaces, we need to migrate the current directory
+	// contents to the "0.0" (root == root "namespace" daemon root)
+	nsRoot := "0.0"
+	if _, err := os.Stat(realRoot); err == nil {
+		// root current exists; we need to check for a prior migration
+		if _, err := os.Stat(path.Join(realRoot, nsRoot)); err != nil && os.IsNotExist(err) {
+			// need to migrate current root to "0.0" subroot
+			// 1. create non-usernamespaced root as "0.0"
+			if err := os.Mkdir(path.Join(realRoot, nsRoot), 0700); err != nil {
+				return nil, fmt.Errorf("Cannot create daemon root %q: %v", path.Join(realRoot, nsRoot), err)
+			}
+			// 2. move current root content to "0.0" new subroot
+			if err := directory.MoveDirToSubdir(realRoot, nsRoot); err != nil {
+				return nil, fmt.Errorf("Cannot migrate current daemon root %q for user namespaces: %v", realRoot, err)
+			}
+			// 3. chmod outer root to 755
+			if chmodErr := os.Chmod(realRoot, 0755); chmodErr != nil {
+				return nil, chmodErr
+			}
+		}
+	} else if os.IsNotExist(err) {
+		// no root exists yet, create it 0755 with root:root ownership
+		if err := os.MkdirAll(realRoot, 0755); err != nil {
+			return nil, err
+		}
+		// create the "0.0" subroot (so no future "migration" happens of the root)
+		if err := os.Mkdir(path.Join(realRoot, nsRoot), 0700); err != nil {
+			return nil, err
+		}
+	}
+
+	// for user namespaces we will create a subtree underneath the specified root
+	// with any/all specified remapped root uid/gid options on the daemon creating
+	// a new subdirectory with ownership set to the remapped uid/gid (so as to allow
+	// `chdir()` to work for containers namespaced to that uid/gid)
+	if config.RemappedRoot != "" {
+		nsRoot = fmt.Sprintf("%d.%d", rootUid, rootGid)
+	}
+	config.Root = path.Join(realRoot, nsRoot)
+	log.Debugf("Creating actual daemon root: %s", config.Root)
+
 	// Create the root directory if it doesn't exists
-	if err := os.MkdirAll(config.Root, 0700); err != nil && !os.IsExist(err) {
-		return nil, err
+	if err := idtools.MkdirAllAs(config.Root, 0700, rootUid, rootGid); err != nil {
+		return nil, fmt.Errorf("Cannot create daemon root: %s: %v", config.Root, err)
 	}
 
 	// Set the default driver
 	graphdriver.DefaultDriver = config.GraphDriver
 
 	// Load storage driver
-	driver, err := graphdriver.New(config.Root, config.GraphOptions)
+	driver, err := graphdriver.New(config.Root, config.GraphOptions, uidMaps, gidMaps)
 	if err != nil {
 		return nil, fmt.Errorf("error intializing graphdriver: %v", err)
 	}
@@ -897,7 +973,7 @@ func NewDaemonFromDirectory(config *Config, eng *engine.Engine) (*Daemon, error)
 
 	daemonRepo := path.Join(config.Root, "containers")
 
-	if err := os.MkdirAll(daemonRepo, 0700); err != nil && !os.IsExist(err) {
+	if err := idtools.MkdirAllAs(daemonRepo, 0700, rootUid, rootGid); err != nil && !os.IsExist(err) {
 		return nil, err
 	}
 
@@ -912,7 +988,7 @@ func NewDaemonFromDirectory(config *Config, eng *engine.Engine) (*Daemon, error)
 		return nil, err
 	}
 
-	volumesDriver, err := graphdriver.GetDriver("vfs", config.Root, config.GraphOptions)
+	volumesDriver, err := graphdriver.GetDriver("vfs", config.Root, config.GraphOptions, uidMaps, gidMaps)
 	if err != nil {
 		return nil, err
 	}
@@ -981,7 +1057,7 @@ func NewDaemonFromDirectory(config *Config, eng *engine.Engine) (*Daemon, error)
 
 	if sysInitPath != localCopy {
 		// When we find a suitable dockerinit binary (even if it's our local binary), we copy it into config.Root at localCopy for future use (so that the original can go away without that being a problem, for example during a package upgrade).
-		if err := os.Mkdir(path.Dir(localCopy), 0700); err != nil && !os.IsExist(err) {
+		if err := idtools.MkdirAs(path.Dir(localCopy), 0700, rootUid, rootGid); err != nil && !os.IsExist(err) {
 			return nil, err
 		}
 		if _, err := utils.CopyFile(sysInitPath, localCopy); err != nil {
@@ -1019,8 +1095,12 @@ func NewDaemonFromDirectory(config *Config, eng *engine.Engine) (*Daemon, error)
 		trustStore:       t,
 		statsCollector:   newStatsCollector(1 * time.Second),
 		defaultLogConfig: config.LogConfig,
+		uidMaps:          uidMaps,
+		gidMaps:          gidMaps,
 	}
 
+	// Setup shutdown handlers
+	// FIXME: can these shutdown handlers be registered closer to their source?
 	eng.OnShutdown(func() {
 		if err := daemon.shutdown(); err != nil {
 			log.Errorf("Error during daemon.shutdown(): %v", err)
@@ -1193,6 +1273,11 @@ func (daemon *Daemon) ExecutionDriver() execdriver.Driver {
 
 func (daemon *Daemon) ContainerGraph() *graphdb.Database {
 	return daemon.containerGraph
+}
+
+func (daemon *Daemon) GetRemappedUidGid() (int, int) {
+	uid, gid, _ := idtools.GetRootUidGid(daemon.uidMaps, daemon.gidMaps)
+	return uid, gid
 }
 
 func (daemon *Daemon) ImageGetCached(imgID string, config *runconfig.Config) (*image.Image, error) {

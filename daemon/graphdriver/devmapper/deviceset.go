@@ -19,11 +19,14 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/docker/libcontainer/configs"
+	"github.com/docker/libcontainer/label"
+
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/devicemapper"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/parsers"
 	"github.com/docker/docker/pkg/units"
-	"github.com/docker/libcontainer/label"
 )
 
 var (
@@ -97,6 +100,8 @@ type DeviceSet struct {
 	thinpBlockSize       uint32
 	thinPoolDevice       string
 	Transaction          `json:"-"`
+	uidMaps              []configs.IDMap
+	gidMaps              []configs.IDMap
 }
 
 type DiskUsage struct {
@@ -197,7 +202,11 @@ func (devices *DeviceSet) ensureImage(name string, size int64) (string, error) {
 	dirname := devices.loopbackDir()
 	filename := path.Join(dirname, name)
 
-	if err := os.MkdirAll(dirname, 0700); err != nil && !os.IsExist(err) {
+	uid, gid, err := idtools.GetRootUidGid(devices.uidMaps, devices.gidMaps)
+	if err != nil {
+		return "", err
+	}
+	if err := idtools.MkdirAllAs(dirname, 0700, uid, gid); err != nil && !os.IsExist(err) {
 		return "", err
 	}
 
@@ -967,6 +976,15 @@ func (devices *DeviceSet) initDevmapper(doInit bool) error {
 	}
 	log.Debugf("devicemapper: udev sync support: %v", devicemapper.UdevSyncSupported())
 
+	//create the root dir of the devmapper driver ownership to match this
+	//daemon's remapped root uid/gid so containers can start properly
+	uid, gid, err := idtools.GetRootUidGid(devices.uidMaps, devices.gidMaps)
+	if err != nil {
+		return err
+	}
+	if err := idtools.MkdirAs(devices.root, 0700, uid, gid); err != nil && !os.IsExist(err) {
+		return err
+	}
 	if err := os.MkdirAll(devices.metadataDir(), 0700); err != nil && !os.IsExist(err) {
 		return err
 	}
@@ -1650,7 +1668,7 @@ func (devices *DeviceSet) Status() *Status {
 	return status
 }
 
-func NewDeviceSet(root string, doInit bool, options []string) (*DeviceSet, error) {
+func NewDeviceSet(root string, doInit bool, options []string, uidMaps, gidMaps []configs.IDMap) (*DeviceSet, error) {
 	devicemapper.SetDevDir("/dev")
 
 	devices := &DeviceSet{
@@ -1663,6 +1681,8 @@ func NewDeviceSet(root string, doInit bool, options []string) (*DeviceSet, error
 		doBlkDiscard:         true,
 		thinpBlockSize:       DefaultThinpBlockSize,
 		deviceIdMap:          make([]byte, DeviceIdMapSz),
+		uidMaps:              uidMaps,
+		gidMaps:              gidMaps,
 	}
 
 	foundBlkDiscard := false

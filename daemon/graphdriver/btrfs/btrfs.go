@@ -16,7 +16,10 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/docker/libcontainer/configs"
+
 	"github.com/docker/docker/daemon/graphdriver"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/mount"
 )
 
@@ -24,7 +27,7 @@ func init() {
 	graphdriver.Register("btrfs", Init)
 }
 
-func Init(home string, options []string) (graphdriver.Driver, error) {
+func Init(home string, options []string, uidMaps, gidMaps []configs.IDMap) (graphdriver.Driver, error) {
 	rootdir := path.Dir(home)
 
 	var buf syscall.Statfs_t
@@ -36,7 +39,11 @@ func Init(home string, options []string) (graphdriver.Driver, error) {
 		return nil, graphdriver.ErrPrerequisites
 	}
 
-	if err := os.MkdirAll(home, 0700); err != nil {
+	rootUid, rootGid, err := idtools.GetRootUidGid(uidMaps, gidMaps)
+	if err != nil {
+		return nil, err
+	}
+	if err := idtools.MkdirAllAs(home, 0700, rootUid, rootGid); err != nil {
 		return nil, err
 	}
 
@@ -45,14 +52,18 @@ func Init(home string, options []string) (graphdriver.Driver, error) {
 	}
 
 	driver := &Driver{
-		home: home,
+		home:    home,
+		uidMaps: uidMaps,
+		gidMaps: gidMaps,
 	}
 
-	return graphdriver.NaiveDiffDriver(driver), nil
+	return graphdriver.NaiveDiffDriver(driver, uidMaps, gidMaps), nil
 }
 
 type Driver struct {
-	home string
+	home    string
+	uidMaps []configs.IDMap
+	gidMaps []configs.IDMap
 }
 
 func (d *Driver) String() string {

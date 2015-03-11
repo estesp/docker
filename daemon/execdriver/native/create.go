@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/docker/docker/daemon/execdriver"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/libcontainer/apparmor"
 	"github.com/docker/libcontainer/configs"
 	"github.com/docker/libcontainer/devices"
@@ -26,6 +27,10 @@ func (d *driver) createContainer(c *execdriver.Command) (*configs.Config, error)
 	}
 
 	if err := d.createPid(container, c); err != nil {
+		return nil, err
+	}
+
+	if err := d.setupRemappedRoot(container, c); err != nil {
 		return nil, err
 	}
 
@@ -170,6 +175,22 @@ func (d *driver) createPid(container *configs.Config, c *execdriver.Command) err
 		container.Namespaces.Remove(configs.NEWPID)
 		return nil
 	}
+
+	return nil
+}
+
+func (d *driver) setupRemappedRoot(container *configs.Config, c *execdriver.Command) error {
+	if c.RemappedRoot.Uid == 0 {
+		container.Namespaces.Remove(configs.NEWUSER)
+		return nil
+	}
+
+	uidMap, gidMap, err := idtools.CreateIDMapsForRoot(c.RemappedRoot.Uid, c.RemappedRoot.Gid)
+	if err != nil {
+		return err
+	}
+	container.UidMappings = uidMap
+	container.GidMappings = gidMap
 
 	return nil
 }

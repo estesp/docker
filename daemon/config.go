@@ -1,7 +1,12 @@
 package daemon
 
 import (
+	"fmt"
 	"net"
+	"strconv"
+	"strings"
+
+	"github.com/docker/libcontainer/user"
 
 	"github.com/docker/docker/daemon/networkdriver"
 	"github.com/docker/docker/opts"
@@ -49,6 +54,7 @@ type Config struct {
 	Labels                      []string
 	Ulimits                     map[string]*ulimit.Ulimit
 	LogConfig                   runconfig.LogConfig
+	RemappedRoot                string
 }
 
 // InstallFlags adds command-line options to the top-level flag parser for
@@ -84,6 +90,7 @@ func (config *Config) InstallFlags() {
 	config.Ulimits = make(map[string]*ulimit.Ulimit)
 	opts.UlimitMapVar(config.Ulimits, []string{"-default-ulimit"}, "Set default ulimits for containers")
 	flag.StringVar(&config.LogConfig.Type, []string{"-log-driver"}, "json-file", "Containers logging driver")
+	flag.StringVar(&config.RemappedRoot, []string{"-root"}, "", "User/Group [user|uid[:gid|:group]] for container root")
 }
 
 func getDefaultNetworkMtu() int {
@@ -91,4 +98,85 @@ func getDefaultNetworkMtu() int {
 		return iface.MTU
 	}
 	return defaultNetworkMtu
+}
+
+// Parse the remapped root (user namespace) option, which can be one of:
+//   username            - valid username from /etc/passwd
+//   username:groupname  - valid username; valid groupname from /etc/group
+//   uid                 - 32-bit unsigned int valid Linux UID value
+//   uid:gid             - uid value; 32-bit unsigned int Linux GID value
+//
+//  If no groupname is specified, and a username is specified, an attempt
+//  will be made to lookup a gid for that username as a groupname
+//
+//  If names are used, they are mapped to the appropriate 32-bit unsigned int
+func parseRemappedRoot(usergrp string) (int, int, error) {
+
+	var userId, groupId int
+
+	idparts := strings.Split(usergrp, ":")
+	if len(idparts) > 2 {
+		return 0, 0, fmt.Errorf("Invalid user/group specification in --root: %q", usergrp)
+	}
+
+	if uid, err := strconv.ParseInt(idparts[0], 10, 32); err == nil {
+		// must be a uid; take it as valid
+		userId = int(uid)
+		if len(idparts) == 1 {
+			// if the uid was numeric and no gid was specified, take the uid as the gid
+			groupId = userId
+		}
+	} else {
+		users, err := user.ParsePasswdFileFilter("/etc/passwd", func(usr user.User) bool {
+			if usr.Name == idparts[0] {
+				return true
+			}
+			return false
+		})
+		if err != nil || len(users) == 0 {
+			return 0, 0, fmt.Errorf("Unable to find username %q: %v", idparts[0], err)
+		}
+		userId = users[0].Uid
+		if len(idparts) == 1 {
+			// we only have a string username, and no group specified; look up gid from username as group
+			groups, err := user.ParseGroupFileFilter("/etc/group", func(grp user.Group) bool {
+				if grp.Name == idparts[0] {
+					return true
+				}
+				return false
+			})
+			if err != nil {
+				return 0, 0, fmt.Errorf("Error during gid lookup for %q: %v", idparts[0], err)
+			}
+			if len(groups) == 0 {
+				return 0, 0, fmt.Errorf("No such group %q", idparts[0])
+			}
+			groupId = groups[0].Gid
+		}
+	}
+
+	if len(idparts) == 2 {
+		// groupname or gid is separately specified and must be resolved
+		// to a unsigned 32-bit gid
+		if gid, err := strconv.ParseInt(idparts[1], 10, 32); err == nil {
+			// must be a gid, take it as valid
+			groupId = int(gid)
+		} else {
+			// not a number; attempt a lookup
+			groups, err := user.ParseGroupFileFilter("/etc/group", func(grp user.Group) bool {
+				if grp.Name == idparts[1] {
+					return true
+				}
+				return false
+			})
+			if err != nil {
+				return 0, 0, fmt.Errorf("Error during gid lookup for %q: %v", idparts[1], err)
+			}
+			if len(groups) == 0 {
+				return 0, 0, fmt.Errorf("No such group %q", idparts[1])
+			}
+			groupId = groups[0].Gid
+		}
+	}
+	return userId, groupId, nil
 }

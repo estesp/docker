@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/docker/libcontainer/configs"
+
 	"github.com/docker/docker/pkg/archive"
 )
 
@@ -65,7 +67,7 @@ var (
 	}
 )
 
-type InitFunc func(root string, options []string) (Driver, error)
+type InitFunc func(root string, options []string, uidMaps, gidMaps []configs.IDMap) (Driver, error)
 
 // ProtoDriver defines the basic capabilities of a driver.
 // This interface exists solely to be a minimum set of methods
@@ -132,23 +134,23 @@ func Register(name string, initFunc InitFunc) error {
 	return nil
 }
 
-func GetDriver(name, home string, options []string) (Driver, error) {
+func GetDriver(name, home string, options []string, uidMaps, gidMaps []configs.IDMap) (Driver, error) {
 	if initFunc, exists := drivers[name]; exists {
-		return initFunc(path.Join(home, name), options)
+		return initFunc(path.Join(home, name), options, uidMaps, gidMaps)
 	}
 	return nil, ErrNotSupported
 }
 
-func New(root string, options []string) (driver Driver, err error) {
+func New(root string, options []string, uidMaps, gidMaps []configs.IDMap) (driver Driver, err error) {
 	for _, name := range []string{os.Getenv("DOCKER_DRIVER"), DefaultDriver} {
 		if name != "" {
-			return GetDriver(name, root, options)
+			return GetDriver(name, root, options, uidMaps, gidMaps)
 		}
 	}
 
 	// Check for priority drivers first
 	for _, name := range priority {
-		driver, err = GetDriver(name, root, options)
+		driver, err = GetDriver(name, root, options, uidMaps, gidMaps)
 		if err != nil {
 			if err == ErrNotSupported || err == ErrPrerequisites || err == ErrIncompatibleFS {
 				continue
@@ -161,7 +163,7 @@ func New(root string, options []string) (driver Driver, err error) {
 
 	// Check all registered drivers if no priority driver is found
 	for name, initFunc := range drivers {
-		if driver, err = initFunc(root, options); err != nil {
+		if driver, err = initFunc(root, options, uidMaps, gidMaps); err != nil {
 			if err == ErrNotSupported || err == ErrPrerequisites || err == ErrIncompatibleFS {
 				continue
 			}

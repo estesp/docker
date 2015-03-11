@@ -39,3 +39,8 @@ func setHeaderForSpecialDevice(hdr *tar.Header, ta *tarAppender, name string, st
 	// do nothing. no notion of Rdev, Inode, Nlink in stat on Windows
 	return
 }
+
+func getFileUidGid(stat interface{}) (int, int, error) {
+	// no notion of file ownership mapping yet on Windows
+	return 0, 0, nil
+}

@@ -23,6 +23,12 @@ func applyLayer() {
 	runtime.LockOSThread()
 	flag.Parse()
 
+	var options *archive.TarOptions
+
+	if err := json.Unmarshal([]byte(os.Getenv("OPT")), &options); err != nil {
+		fatal(err)
+	}
+
 	if err := chroot(flag.Arg(0)); err != nil {
 		fatal(err)
 	}
@@ -36,7 +42,7 @@ func applyLayer() {
 	}
 
 	os.Setenv("TMPDIR", tmpDir)
-	size, err := archive.UnpackLayer("/", os.Stdin)
+	size, err := archive.UnpackLayer("/", os.Stdin, options)
 	os.RemoveAll(tmpDir)
 	if err != nil {
 		fatal(err)
@@ -52,7 +58,7 @@ func applyLayer() {
 	os.Exit(0)
 }
 
-func ApplyLayer(dest string, layer archive.ArchiveReader) (size int64, err error) {
+func ApplyLayer(dest string, layer archive.ArchiveReader, options *archive.TarOptions) (size int64, err error) {
 	dest = filepath.Clean(dest)
 	decompressed, err := archive.DecompressStream(layer)
 	if err != nil {
@@ -60,9 +66,20 @@ func ApplyLayer(dest string, layer archive.ArchiveReader) (size int64, err error
 	}
 
 	defer decompressed.Close()
+	if options == nil {
+		options = &archive.TarOptions{}
+	}
+	if options.ExcludePatterns == nil {
+		options.ExcludePatterns = []string{}
+	}
 
+	data, err := json.Marshal(options)
+	if err != nil {
+		return 0, fmt.Errorf("ApplyLayer json encode: %v", err)
+	}
 	cmd := reexec.Command("docker-applyLayer", dest)
 	cmd.Stdin = decompressed
+	cmd.Env = append(cmd.Env, fmt.Sprintf("OPT=%s", data))
 
 	outBuf, errBuf := new(bytes.Buffer), new(bytes.Buffer)
 	cmd.Stdout, cmd.Stderr = outBuf, errBuf

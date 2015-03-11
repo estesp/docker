@@ -16,6 +16,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/pools"
 	"github.com/docker/docker/pkg/system"
+	"github.com/docker/libcontainer/configs"
 )
 
 type ChangeType int
@@ -370,13 +371,15 @@ func ChangesSize(newDir string, changes []Change) int64 {
 }
 
 // ExportChanges produces an Archive from the provided changes, relative to dir.
-func ExportChanges(dir string, changes []Change) (Archive, error) {
+func ExportChanges(dir string, changes []Change, uidMaps, gidMaps []configs.IDMap) (Archive, error) {
 	reader, writer := io.Pipe()
 	go func() {
 		ta := &tarAppender{
 			TarWriter: tar.NewWriter(writer),
 			Buffer:    pools.BufioWriter32KPool.Get(nil),
 			SeenFiles: make(map[uint64]string),
+			UidMaps:   uidMaps,
+			GidMaps:   gidMaps,
 		}
 		// this buffer is needed for the duration of this piped stream
 		defer pools.BufioWriter32KPool.Put(ta.Buffer)

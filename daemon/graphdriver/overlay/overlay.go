@@ -13,10 +13,12 @@ import (
 	"syscall"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/docker/libcontainer/configs"
+	"github.com/docker/libcontainer/label"
+
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
-	"github.com/docker/libcontainer/label"
 )
 
 // This is a small wrapper over the NaiveDiffWriter that lets us have a custom
@@ -36,9 +38,9 @@ type naiveDiffDriverWithApply struct {
 	applyDiff ApplyDiffProtoDriver
 }
 
-func NaiveDiffDriverWithApply(driver ApplyDiffProtoDriver) graphdriver.Driver {
+func NaiveDiffDriverWithApply(driver ApplyDiffProtoDriver, uidMaps, gidMaps []configs.IDMap) graphdriver.Driver {
 	return &naiveDiffDriverWithApply{
-		Driver:    graphdriver.NaiveDiffDriver(driver),
+		Driver:    graphdriver.NaiveDiffDriver(driver, uidMaps, gidMaps),
 		applyDiff: driver,
 	}
 }
@@ -88,6 +90,8 @@ type Driver struct {
 	home       string
 	sync.Mutex // Protects concurrent modification to active
 	active     map[string]*ActiveMount
+	uidMaps    []configs.IDMap
+	gidMaps    []configs.IDMap
 }
 
 var backingFs = "<unknown>"
@@ -96,7 +100,7 @@ func init() {
 	graphdriver.Register("overlay", Init)
 }
 
-func Init(home string, options []string) (graphdriver.Driver, error) {
+func Init(home string, options []string, uidMaps, gidMaps []configs.IDMap) (graphdriver.Driver, error) {
 
 	if err := supportsOverlay(); err != nil {
 		return nil, graphdriver.ErrNotSupported
@@ -129,11 +133,13 @@ func Init(home string, options []string) (graphdriver.Driver, error) {
 	}
 
 	d := &Driver{
-		home:   home,
-		active: make(map[string]*ActiveMount),
+		home:    home,
+		active:  make(map[string]*ActiveMount),
+		uidMaps: uidMaps,
+		gidMaps: gidMaps,
 	}
 
-	return NaiveDiffDriverWithApply(d), nil
+	return NaiveDiffDriverWithApply(d, uidMaps, gidMaps), nil
 }
 
 func supportsOverlay() error {
@@ -375,7 +381,8 @@ func (d *Driver) ApplyDiff(id string, parent string, diff archive.ArchiveReader)
 		return 0, err
 	}
 
-	if size, err = chrootarchive.ApplyLayer(tmpRootDir, diff); err != nil {
+	options := &archive.TarOptions{UidMaps: d.uidMaps, GidMaps: d.gidMaps}
+	if size, err = chrootarchive.ApplyLayer(tmpRootDir, diff, options); err != nil {
 		return 0, err
 	}
 

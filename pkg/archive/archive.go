@@ -16,10 +16,13 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/docker/libcontainer/configs"
+
 	"github.com/docker/docker/vendor/src/code.google.com/p/go/src/pkg/archive/tar"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/docker/docker/pkg/fileutils"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/pools"
 	"github.com/docker/docker/pkg/promise"
 	"github.com/docker/docker/pkg/system"
@@ -35,6 +38,8 @@ type (
 		Compression     Compression
 		NoLchown        bool
 		Name            string
+		UidMaps         []configs.IDMap
+		GidMaps         []configs.IDMap
 	}
 
 	// Archiver allows the reuse of most utility functions of this package
@@ -170,6 +175,8 @@ type tarAppender struct {
 
 	// for hardlink mapping
 	SeenFiles map[uint64]string
+	UidMaps   []configs.IDMap
+	GidMaps   []configs.IDMap
 }
 
 // canonicalTarName provides a platform-independent and consistent posix-style
@@ -235,6 +242,25 @@ func (ta *tarAppender) addTarFile(path, name string) error {
 	if capability != nil {
 		hdr.Xattrs = make(map[string]string)
 		hdr.Xattrs["security.capability"] = string(capability)
+	}
+
+	//handle re-mapping container ID mappings back to host ID mappings before
+	//writing tar headers/files
+	if ta.UidMaps != nil || ta.GidMaps != nil {
+		uid, gid, err := getFileUidGid(fi.Sys())
+		if err != nil {
+			return err
+		}
+		xUid, err := idtools.TranslateIDToContainer(uid, ta.UidMaps)
+		if err != nil {
+			return err
+		}
+		xGid, err := idtools.TranslateIDToContainer(gid, ta.GidMaps)
+		if err != nil {
+			return err
+		}
+		hdr.Uid = xUid
+		hdr.Gid = xGid
 	}
 
 	if err := ta.TarWriter.WriteHeader(hdr); err != nil {
@@ -407,6 +433,8 @@ func TarWithOptions(srcPath string, options *TarOptions) (io.ReadCloser, error) 
 			TarWriter: tar.NewWriter(compressWriter),
 			Buffer:    pools.BufioWriter32KPool.Get(nil),
 			SeenFiles: make(map[uint64]string),
+			UidMaps:   options.UidMaps,
+			GidMaps:   options.GidMaps,
 		}
 		// this buffer is needed for the duration of this piped stream
 		defer pools.BufioWriter32KPool.Put(ta.Buffer)
@@ -560,6 +588,22 @@ loop:
 			}
 		}
 		trBuf.Reset(tr)
+		// if the options contain a unique uid, gid for untar, pass them in via the hdr
+		// so lchown sets the requested uid/gid after writing the file
+		if options.UidMaps != nil {
+			xUid, err := idtools.TranslateIDToHost(hdr.Uid, options.UidMaps)
+			if err != nil {
+				return err
+			}
+			hdr.Uid = xUid
+		}
+		if options.GidMaps != nil {
+			xGid, err := idtools.TranslateIDToHost(hdr.Gid, options.GidMaps)
+			if err != nil {
+				return err
+			}
+			hdr.Gid = xGid
+		}
 		if err := createTarFile(path, dest, hdr, trBuf, !options.NoLchown); err != nil {
 			return err
 		}
