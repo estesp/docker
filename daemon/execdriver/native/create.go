@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"syscall"
 
 	"github.com/docker/docker/daemon/execdriver"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/opencontainers/runc/libcontainer/apparmor"
 	"github.com/opencontainers/runc/libcontainer/configs"
 	"github.com/opencontainers/runc/libcontainer/devices"
@@ -30,6 +32,10 @@ func (d *Driver) createContainer(c *execdriver.Command) (*configs.Config, error)
 	}
 
 	if err := d.createUTS(container, c); err != nil {
+		return nil, err
+	}
+
+	if err := d.setupRemappedRoot(container, c); err != nil {
 		return nil, err
 	}
 
@@ -187,6 +193,37 @@ func (d *Driver) createUTS(container *configs.Config, c *execdriver.Command) err
 	return nil
 }
 
+func (d *Driver) setupRemappedRoot(container *configs.Config, c *execdriver.Command) error {
+	if c.RemappedRoot.Uid == 0 {
+		container.Namespaces.Remove(configs.NEWUSER)
+		return nil
+	}
+
+	uidMaps, gidMaps, err := idtools.CreateIDMapsForRoot(c.RemappedRoot.Uid, c.RemappedRoot.Gid)
+	if err != nil {
+		return err
+	}
+	// convert the Docker daemon id map to the libcontainer variant of the same struct
+	// this keeps us from having to import libcontainer code across Docker client + daemon packages
+	cuidMaps := []configs.IDMap{}
+	cgidMaps := []configs.IDMap{}
+	for _, idMap := range uidMaps {
+		cuidMaps = append(cuidMaps, configs.IDMap(idMap))
+	}
+	for _, idMap := range gidMaps {
+		cgidMaps = append(cgidMaps, configs.IDMap(idMap))
+	}
+	container.UidMappings = cuidMaps
+	container.GidMappings = cgidMaps
+
+	for _, node := range container.Devices {
+		node.Uid = uint32(c.RemappedRoot.Uid)
+		node.Gid = uint32(c.RemappedRoot.Gid)
+	}
+
+	return nil
+}
+
 func (d *Driver) setPrivileged(container *configs.Config) (err error) {
 	container.Capabilities = execdriver.GetAllCapabilities()
 	container.Cgroups.AllowAllDevices = true
@@ -249,6 +286,11 @@ func (d *Driver) setupMounts(container *configs.Config, c *execdriver.Command) e
 		if m.Slave {
 			flags |= syscall.MS_SLAVE
 		}
+
+		if err := os.Chown(m.Source, c.RemappedRoot.Uid, c.RemappedRoot.Gid); err != nil {
+			return err
+		}
+
 		container.Mounts = append(container.Mounts, &configs.Mount{
 			Source:      m.Source,
 			Destination: m.Destination,

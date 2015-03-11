@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"os"
+
+	"github.com/docker/docker/pkg/system"
 )
 
 type IDMap struct {
@@ -27,7 +29,7 @@ func MkdirAs(path string, mode os.FileMode, ownerUid, ownerGid int) error {
 func mkdirAs(path string, mode os.FileMode, ownerUid, ownerGid int, mkAll bool) error {
 
 	if mkAll {
-		if err := os.MkdirAll(path, mode); err != nil && !os.IsExist(err) {
+		if err := system.MkdirAll(path, mode); err != nil && !os.IsExist(err) {
 			return err
 		}
 	} else {

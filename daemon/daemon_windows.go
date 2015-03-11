@@ -80,7 +80,7 @@ func configureVolumes(config *Config) (*volumeStore, error) {
 	return &volumeStore{}, nil
 }
 
-func configureSysInit(config *Config) (string, error) {
+func configureSysInit(config *Config, rootUid, rootGid int) (string, error) {
 	// TODO Windows.
 	return os.Getenv("TEMP"), nil
 }

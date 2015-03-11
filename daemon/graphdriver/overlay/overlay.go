@@ -13,9 +13,12 @@ import (
 	"syscall"
 
 	"github.com/Sirupsen/logrus"
+
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
+	"github.com/docker/docker/pkg/idtools"
+
 	"github.com/opencontainers/runc/libcontainer/label"
 )
 
@@ -41,9 +44,9 @@ type naiveDiffDriverWithApply struct {
 }
 
 // NaiveDiffDriverWithApply returns a NaiveDiff driver with custom ApplyDiff.
-func NaiveDiffDriverWithApply(driver ApplyDiffProtoDriver) graphdriver.Driver {
+func NaiveDiffDriverWithApply(driver ApplyDiffProtoDriver, uidMaps, gidMaps []idtools.IDMap) graphdriver.Driver {
 	return &naiveDiffDriverWithApply{
-		Driver:    graphdriver.NaiveDiffDriver(driver),
+		Driver:    graphdriver.NaiveDiffDriver(driver, uidMaps, gidMaps),
 		applyDiff: driver,
 	}
 }
@@ -98,6 +101,8 @@ type Driver struct {
 	home       string
 	sync.Mutex // Protects concurrent modification to active
 	active     map[string]*ActiveMount
+	uidMaps    []idtools.IDMap
+	gidMaps    []idtools.IDMap
 }
 
 var backingFs = "<unknown>"
@@ -109,7 +114,7 @@ func init() {
 // Init returns the NaiveDiffDriver, a native diff driver for overlay filesystem.
 // If overlay filesystem is not supported on the host, graphdriver.ErrNotSupported is returned as error.
 // If a overlay filesystem is not supported over a existing filesystem then error graphdriver.ErrIncompatibleFS is returned.
-func Init(home string, options []string) (graphdriver.Driver, error) {
+func Init(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (graphdriver.Driver, error) {
 
 	if err := supportsOverlay(); err != nil {
 		return nil, graphdriver.ErrNotSupported
@@ -136,17 +141,23 @@ func Init(home string, options []string) (graphdriver.Driver, error) {
 		return nil, graphdriver.ErrIncompatibleFS
 	}
 
+	rootUid, rootGid, err := idtools.GetRootUidGid(uidMaps, gidMaps)
+	if err != nil {
+		return nil, err
+	}
 	// Create the driver home dir
-	if err := os.MkdirAll(home, 0755); err != nil {
+	if err := idtools.MkdirAllAs(home, 0755, rootUid, rootGid); err != nil && !os.IsExist(err) {
 		return nil, err
 	}
 
 	d := &Driver{
-		home:   home,
-		active: make(map[string]*ActiveMount),
+		home:    home,
+		active:  make(map[string]*ActiveMount),
+		uidMaps: uidMaps,
+		gidMaps: gidMaps,
 	}
 
-	return NaiveDiffDriverWithApply(d), nil
+	return NaiveDiffDriverWithApply(d, uidMaps, gidMaps), nil
 }
 
 func supportsOverlay() error {
@@ -221,10 +232,15 @@ func (d *Driver) Cleanup() error {
 // The parent filesystem is used to configure these directories for the overlay.
 func (d *Driver) Create(id string, parent string) (retErr error) {
 	dir := d.dir(id)
-	if err := os.MkdirAll(path.Dir(dir), 0700); err != nil {
+
+	rootUid, rootGid, err := idtools.GetRootUidGid(d.uidMaps, d.gidMaps)
+	if err != nil {
 		return err
 	}
-	if err := os.Mkdir(dir, 0700); err != nil {
+	if err := idtools.MkdirAllAs(path.Dir(dir), 0700, rootUid, rootGid); err != nil {
+		return err
+	}
+	if err := idtools.MkdirAs(dir, 0700, rootUid, rootGid); err != nil {
 		return err
 	}
 
@@ -237,7 +253,7 @@ func (d *Driver) Create(id string, parent string) (retErr error) {
 
 	// Toplevel images are just a "root" dir
 	if parent == "" {
-		if err := os.Mkdir(path.Join(dir, "root"), 0755); err != nil {
+		if err := idtools.MkdirAs(path.Join(dir, "root"), 0755, rootUid, rootGid); err != nil {
 			return err
 		}
 		return nil
@@ -260,7 +276,7 @@ func (d *Driver) Create(id string, parent string) (retErr error) {
 		if err := os.Mkdir(path.Join(dir, "work"), 0700); err != nil {
 			return err
 		}
-		if err := os.Mkdir(path.Join(dir, "merged"), 0700); err != nil {
+		if err := idtools.MkdirAs(path.Join(dir, "merged"), 0700, rootUid, rootGid); err != nil {
 			return err
 		}
 		if err := ioutil.WriteFile(path.Join(dir, "lower-id"), []byte(parent), 0666); err != nil {
@@ -293,7 +309,7 @@ func (d *Driver) Create(id string, parent string) (retErr error) {
 	if err := os.Mkdir(path.Join(dir, "work"), 0700); err != nil {
 		return err
 	}
-	if err := os.Mkdir(path.Join(dir, "merged"), 0700); err != nil {
+	if err := idtools.MkdirAs(path.Join(dir, "merged"), 0700, rootUid, rootGid); err != nil {
 		return err
 	}
 
@@ -435,7 +451,8 @@ func (d *Driver) ApplyDiff(id string, parent string, diff archive.Reader) (size 
 		return 0, err
 	}
 
-	if size, err = chrootarchive.ApplyUncompressedLayer(tmpRootDir, diff); err != nil {
+	options := &archive.TarOptions{UidMaps: d.uidMaps, GidMaps: d.gidMaps}
+	if size, err = chrootarchive.ApplyUncompressedLayer(tmpRootDir, diff, options); err != nil {
 		return 0, err
 	}
 

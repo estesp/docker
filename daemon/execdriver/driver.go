@@ -156,6 +156,12 @@ type Mount struct {
 	Slave       bool   `json:"slave"`
 }
 
+// User contains the uid and gid representing a Unix user
+type User struct {
+	Uid int `json:"root_uid"`
+	Gid int `json:"root_gid"`
+}
+
 // ProcessConfig describes a process that will be run inside a container.
 type ProcessConfig struct {
 	exec.Cmd `json:"-"`
@@ -185,6 +191,7 @@ type Command struct {
 	Ipc                *Ipc              `json:"ipc"`
 	Pid                *Pid              `json:"pid"`
 	UTS                *UTS              `json:"uts"`
+	RemappedRoot       *User             `json:"remap_root"`
 	Resources          *Resources        `json:"resources"`
 	Mounts             []Mount           `json:"mounts"`
 	AllowedDevices     []*configs.Device `json:"allowed_devices"`

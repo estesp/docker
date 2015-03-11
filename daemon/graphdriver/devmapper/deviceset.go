@@ -19,10 +19,13 @@ import (
 	"time"
 
 	"github.com/Sirupsen/logrus"
+
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/pkg/devicemapper"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/parsers"
 	"github.com/docker/docker/pkg/units"
+
 	"github.com/opencontainers/runc/libcontainer/label"
 )
 
@@ -108,6 +111,8 @@ type DeviceSet struct {
 	overrideUdevSyncCheck bool
 	deferredRemove        bool   // use deferred removal
 	BaseDeviceUUID        string //save UUID of base device
+	uidMaps               []idtools.IDMap
+	gidMaps               []idtools.IDMap
 }
 
 // DiskUsage contains information about disk usage and is used when reporting Status of a device.
@@ -238,7 +243,11 @@ func (devices *DeviceSet) ensureImage(name string, size int64) (string, error) {
 	dirname := devices.loopbackDir()
 	filename := path.Join(dirname, name)
 
-	if err := os.MkdirAll(dirname, 0700); err != nil {
+	uid, gid, err := idtools.GetRootUidGid(devices.uidMaps, devices.gidMaps)
+	if err != nil {
+		return "", err
+	}
+	if err := idtools.MkdirAllAs(dirname, 0700, uid, gid); err != nil && !os.IsExist(err) {
 		return "", err
 	}
 
@@ -1260,7 +1269,16 @@ func (devices *DeviceSet) initDevmapper(doInit bool) error {
 		logrus.Warn("Udev sync is not supported. This will lead to unexpected behavior, data loss and errors. For more information, see https://docs.docker.com/reference/commandline/daemon/#daemon-storage-driver-option")
 	}
 
-	if err := os.MkdirAll(devices.metadataDir(), 0700); err != nil {
+	//create the root dir of the devmapper driver ownership to match this
+	//daemon's remapped root uid/gid so containers can start properly
+	uid, gid, err := idtools.GetRootUidGid(devices.uidMaps, devices.gidMaps)
+	if err != nil {
+		return err
+	}
+	if err := idtools.MkdirAs(devices.root, 0700, uid, gid); err != nil && !os.IsExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(devices.metadataDir(), 0700); err != nil && !os.IsExist(err) {
 		return err
 	}
 
@@ -1964,7 +1982,7 @@ func (devices *DeviceSet) exportDeviceMetadata(hash string) (*deviceMetadata, er
 }
 
 // NewDeviceSet creates the device set based on the options provided.
-func NewDeviceSet(root string, doInit bool, options []string) (*DeviceSet, error) {
+func NewDeviceSet(root string, doInit bool, options []string, uidMaps, gidMaps []idtools.IDMap) (*DeviceSet, error) {
 	devicemapper.SetDevDir("/dev")
 
 	devices := &DeviceSet{
@@ -1978,6 +1996,8 @@ func NewDeviceSet(root string, doInit bool, options []string) (*DeviceSet, error
 		doBlkDiscard:          true,
 		thinpBlockSize:        defaultThinpBlockSize,
 		deviceIDMap:           make([]byte, deviceIDMapSz),
+		uidMaps:               uidMaps,
+		gidMaps:               gidMaps,
 	}
 
 	foundBlkDiscard := false

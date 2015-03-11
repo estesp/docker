@@ -280,6 +280,13 @@ func populateCommand(c *Container, env []string) error {
 	processConfig.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	processConfig.Env = env
 
+	remappedRoot := &execdriver.User{}
+	rootUid, rootGid := c.daemon.GetRemappedUidGid()
+	if rootUid != 0 {
+		remappedRoot.Uid = rootUid
+		remappedRoot.Gid = rootGid
+	}
+
 	c.command = &execdriver.Command{
 		ID:                 c.ID,
 		Rootfs:             c.rootfsPath(),
@@ -288,6 +295,7 @@ func populateCommand(c *Container, env []string) error {
 		WorkingDir:         c.Config.WorkingDir,
 		Network:            en,
 		Ipc:                ipc,
+		RemappedRoot:       remappedRoot,
 		Pid:                pid,
 		UTS:                uts,
 		Resources:          resources,
