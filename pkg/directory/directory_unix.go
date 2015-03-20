@@ -3,7 +3,9 @@
 package directory
 
 import (
+	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"syscall"
 )
@@ -36,4 +38,23 @@ func Size(dir string) (size int64, err error) {
 		return nil
 	})
 	return
+}
+
+// Move all contents of a directory to a subdirectory underneath the original path
+func MoveDirToSubdir(oldpath, subdir string) error {
+
+	infos, err := ioutil.ReadDir(oldpath)
+	if err != nil {
+		return err
+	}
+	for _, info := range infos {
+		if info.Name() != subdir {
+			oldName := path.Join(oldpath, info.Name())
+			newName := path.Join(oldpath, subdir, info.Name())
+			if err := os.Rename(oldName, newName); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
