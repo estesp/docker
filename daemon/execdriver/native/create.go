@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"syscall"
 
@@ -192,6 +193,11 @@ func (d *driver) setupRemappedRoot(container *configs.Config, c *execdriver.Comm
 	container.UidMappings = uidMap
 	container.GidMappings = gidMap
 
+	for _, node := range container.Devices {
+		node.Uid = uint32(c.RemappedRoot.Uid)
+		node.Gid = uint32(c.RemappedRoot.Gid)
+	}
+
 	return nil
 }
 
@@ -254,6 +260,11 @@ func (d *driver) setupMounts(container *configs.Config, c *execdriver.Command) e
 		if m.Slave {
 			flags |= syscall.MS_SLAVE
 		}
+
+		if err := os.Chown(m.Source, c.RemappedRoot.Uid, c.RemappedRoot.Gid); err != nil {
+			return err
+		}
+
 		container.Mounts = append(container.Mounts, &configs.Mount{
 			Source:      m.Source,
 			Destination: m.Destination,

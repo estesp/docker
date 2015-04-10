@@ -15,12 +15,15 @@ import (
 	"time"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/docker/libcontainer/configs"
+
 	"github.com/docker/distribution/digest"
 	"github.com/docker/docker/autogen/dockerversion"
 	"github.com/docker/docker/daemon/graphdriver"
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/common"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/progressreader"
 	"github.com/docker/docker/pkg/truncindex"
 	"github.com/docker/docker/runconfig"
@@ -32,17 +35,24 @@ type Graph struct {
 	Root    string
 	idIndex *truncindex.TruncIndex
 	driver  graphdriver.Driver
+	uidMaps []configs.IDMap
+	gidMaps []configs.IDMap
 }
 
 // NewGraph instantiates a new graph at the given root path in the filesystem.
 // `root` will be created if it doesn't exist.
-func NewGraph(root string, driver graphdriver.Driver) (*Graph, error) {
+func NewGraph(root string, driver graphdriver.Driver, uidMaps, gidMaps []configs.IDMap) (*Graph, error) {
 	abspath, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
 	}
+
+	rootUid, rootGid, err := idtools.GetRootUidGid(uidMaps, gidMaps)
+	if err != nil {
+		return nil, err
+	}
 	// Create the root directory if it doesn't exists
-	if err := os.MkdirAll(root, 0700); err != nil && !os.IsExist(err) {
+	if err := idtools.MkdirAllAs(root, 0700, rootUid, rootGid); err != nil && !os.IsExist(err) {
 		return nil, err
 	}
 
@@ -50,6 +60,8 @@ func NewGraph(root string, driver graphdriver.Driver) (*Graph, error) {
 		Root:    abspath,
 		idIndex: truncindex.NewTruncIndex([]string{}),
 		driver:  driver,
+		uidMaps: uidMaps,
+		gidMaps: gidMaps,
 	}
 	if err := graph.restore(); err != nil {
 		return nil, err
@@ -230,7 +242,11 @@ func (graph *Graph) TempLayerArchive(id string, sf *utils.StreamFormatter, outpu
 // Mktemp creates a temporary sub-directory inside the graph's filesystem.
 func (graph *Graph) Mktemp(id string) (string, error) {
 	dir := path.Join(graph.Root, "_tmp", common.GenerateRandomID())
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	rootUid, rootGid, err := idtools.GetRootUidGid(graph.uidMaps, graph.gidMaps)
+	if err != nil {
+		return "", err
+	}
+	if err := idtools.MkdirAllAs(dir, 0700, rootUid, rootGid); err != nil {
 		return "", err
 	}
 	return dir, nil
@@ -273,7 +289,7 @@ func bufferToFile(f *os.File, src io.Reader) (int64, digest.Digest, error) {
 //
 // This extra layer is used by all containers as the top-most ro layer. It protects
 // the container from unwanted side-effects on the rw layer.
-func SetupInitLayer(initLayer string) error {
+func SetupInitLayer(initLayer string, rootUid, rootGid int) error {
 	for pth, typ := range map[string]string{
 		"/dev/pts":         "dir",
 		"/dev/shm":         "dir",
@@ -296,12 +312,12 @@ func SetupInitLayer(initLayer string) error {
 
 		if _, err := os.Stat(path.Join(initLayer, pth)); err != nil {
 			if os.IsNotExist(err) {
-				if err := os.MkdirAll(path.Join(initLayer, path.Dir(pth)), 0755); err != nil {
+				if err := idtools.MkdirAllAs(path.Join(initLayer, path.Dir(pth)), 0755, rootUid, rootGid); err != nil {
 					return err
 				}
 				switch typ {
 				case "dir":
-					if err := os.MkdirAll(path.Join(initLayer, pth), 0755); err != nil {
+					if err := idtools.MkdirAllAs(path.Join(initLayer, pth), 0755, rootUid, rootGid); err != nil {
 						return err
 					}
 				case "file":
@@ -310,6 +326,7 @@ func SetupInitLayer(initLayer string) error {
 						return err
 					}
 					f.Close()
+					f.Chown(rootUid, rootGid)
 				default:
 					if err := os.Symlink(typ, path.Join(initLayer, pth)); err != nil {
 						return err

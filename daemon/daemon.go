@@ -686,7 +686,7 @@ func (daemon *Daemon) createRootfs(container *Container) error {
 	}
 	defer daemon.driver.Put(initID)
 
-	if err := graph.SetupInitLayer(initPath); err != nil {
+	if err := graph.SetupInitLayer(initPath, rootUid, rootGid); err != nil {
 		return err
 	}
 
@@ -870,17 +870,6 @@ func NewDaemonFromDirectory(config *Config, eng *engine.Engine) (*Daemon, error)
 		}
 	}
 
-	// set up the tmpDir to use a canonical path
-	tmp, err := utils.TempDir(config.Root)
-	if err != nil {
-		return nil, fmt.Errorf("Unable to get the TempDir under %s: %s", config.Root, err)
-	}
-	realTmp, err := utils.ReadSymlinkedDirectory(tmp)
-	if err != nil {
-		return nil, fmt.Errorf("Unable to get the full path to the TempDir (%s): %s", tmp, err)
-	}
-	os.Setenv("TMPDIR", realTmp)
-
 	// get the canonical path to the Docker root directory
 	var realRoot string
 	if _, err := os.Stat(config.Root); err != nil && os.IsNotExist(err) {
@@ -941,6 +930,17 @@ func NewDaemonFromDirectory(config *Config, eng *engine.Engine) (*Daemon, error)
 		return nil, fmt.Errorf("Cannot create daemon root: %s: %v", config.Root, err)
 	}
 
+	// set up the tmpDir to use a canonical path
+	tmp, err := tempDir(config.Root, rootUid, rootGid)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to get a temp directory under %s: %s", config.Root, err)
+	}
+	realTmp, err := utils.ReadSymlinkedDirectory(tmp)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to get the full path to the TempDir (%s): %s", tmp, err)
+	}
+	os.Setenv("TMPDIR", realTmp)
+
 	// Set the default driver
 	graphdriver.DefaultDriver = config.GraphDriver
 
@@ -982,8 +982,8 @@ func NewDaemonFromDirectory(config *Config, eng *engine.Engine) (*Daemon, error)
 		return nil, err
 	}
 
-	log.Debugf("Creating images graph")
-	g, err := graph.NewGraph(path.Join(config.Root, "graph"), driver)
+	log.Debug("Creating images graph")
+	g, err := graph.NewGraph(path.Join(config.Root, "graph"), driver, uidMaps, gidMaps)
 	if err != nil {
 		return nil, err
 	}
@@ -1310,6 +1310,16 @@ func (daemon *Daemon) ImageGetCached(imgID string, config *runconfig.Config) (*i
 		}
 	}
 	return match, nil
+}
+
+// tempDir returns the default directory to use for temporary files.
+func tempDir(rootDir string, rootUid, rootGid int) (string, error) {
+	var tmpDir string
+	if tmpDir = os.Getenv("DOCKER_TMPDIR"); tmpDir == "" {
+		tmpDir = filepath.Join(rootDir, "tmp")
+	}
+	err := idtools.MkdirAllAs(tmpDir, 0700, rootUid, rootGid)
+	return tmpDir, err
 }
 
 func checkKernel() error {
