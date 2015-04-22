@@ -28,6 +28,7 @@ import (
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/chrootarchive"
 	"github.com/docker/docker/pkg/httputils"
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/ioutils"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/parsers"
@@ -709,7 +710,10 @@ func (b *builder) checkPathForAddition(orig string) error {
 
 func (b *builder) addContext(container *daemon.Container, orig, dest string, decompress bool) error {
 	var (
-		err        error
+		err     error
+		rootUid int
+		rootGid int
+
 		destExists = true
 		origPath   = filepath.Join(b.contextPath, orig)
 		destPath   string
@@ -717,6 +721,12 @@ func (b *builder) addContext(container *daemon.Container, orig, dest string, dec
 
 	// Work in daemon-local OS specific file paths
 	dest = filepath.FromSlash(dest)
+	if b.defaultArchiver != nil {
+		rootUid, rootGid, err = idtools.GetRootUidGid(b.defaultArchiver.UidMaps, b.defaultArchiver.GidMaps)
+		if err != nil {
+			return err
+		}
+	}
 
 	destPath, err = container.GetResourcePath(dest)
 	if err != nil {
@@ -746,7 +756,7 @@ func (b *builder) addContext(container *daemon.Container, orig, dest string, dec
 	}
 
 	if fi.IsDir() {
-		return copyAsDirectory(origPath, destPath, destExists)
+		return copyAsDirectory(origPath, destPath, destExists, rootUid, rootGid, b.defaultArchiver)
 	}
 
 	// If we are adding a remote file (or we've been told not to decompress), do not try to untar it
@@ -771,8 +781,14 @@ func (b *builder) addContext(container *daemon.Container, orig, dest string, dec
 	if err := system.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return err
 	}
-	if err := chrootarchive.CopyWithTar(origPath, destPath); err != nil {
-		return err
+	if b.defaultArchiver != nil {
+		if err := b.defaultArchiver.CopyWithTar(origPath, destPath); err != nil {
+			return err
+		}
+	} else {
+		if err := chrootarchive.CopyWithTar(origPath, destPath); err != nil {
+			return err
+		}
 	}
 
 	resPath := destPath
@@ -780,14 +796,20 @@ func (b *builder) addContext(container *daemon.Container, orig, dest string, dec
 		resPath = filepath.Join(destPath, filepath.Base(origPath))
 	}
 
-	return fixPermissions(origPath, resPath, 0, 0, destExists)
+	return fixPermissions(origPath, resPath, rootUid, rootGid, destExists)
 }
 
-func copyAsDirectory(source, destination string, destExisted bool) error {
-	if err := chrootarchive.CopyWithTar(source, destination); err != nil {
-		return err
+func copyAsDirectory(source, destination string, destExisted bool, rootUid, rootGid int, archiver *archive.Archiver) error {
+	if archiver != nil {
+		if err := archiver.CopyWithTar(source, destination); err != nil {
+			return err
+		}
+	} else {
+		if err := chrootarchive.CopyWithTar(source, destination); err != nil {
+			return err
+		}
 	}
-	return fixPermissions(source, destination, 0, 0, destExisted)
+	return fixPermissions(source, destination, rootUid, rootGid, destExisted)
 }
 
 func (b *builder) clearTmp() {

@@ -33,6 +33,7 @@ import (
 	"github.com/docker/docker/builder/parser"
 	"github.com/docker/docker/cliconfig"
 	"github.com/docker/docker/daemon"
+	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/streamformatter"
 	"github.com/docker/docker/pkg/stringid"
@@ -114,15 +115,16 @@ type builder struct {
 	// both of these are controlled by the Remove and ForceRemove options in BuildOpts
 	TmpContainers map[string]struct{} // a map of containers used for removes
 
-	dockerfileName string        // name of Dockerfile
-	dockerfile     *parser.Node  // the syntax tree of the dockerfile
-	image          string        // image name for commit processing
-	maintainer     string        // maintainer name. could probably be removed.
-	cmdSet         bool          // indicates is CMD was set in current Dockerfile
-	BuilderFlags   *BFlags       // current cmd's BuilderFlags - temporary
-	context        tarsum.TarSum // the context is a tarball that is uploaded by the client
-	contextPath    string        // the path of the temporary directory the local context is unpacked to (server side)
-	noBaseImage    bool          // indicates that this build does not start from any base image, but is being built from an empty file system.
+	defaultArchiver *archive.Archiver // archive instance for encoding remapped root uid/gid settings
+	dockerfileName  string            // name of Dockerfile
+	dockerfile      *parser.Node      // the syntax tree of the dockerfile
+	image           string            // image name for commit processing
+	maintainer      string            // maintainer name. could probably be removed.
+	cmdSet          bool              // indicates is CMD was set in current Dockerfile
+	BuilderFlags    *BFlags           // current cmd's BuilderFlags - temporary
+	context         tarsum.TarSum     // the context is a tarball that is uploaded by the client
+	contextPath     string            // the path of the temporary directory the local context is unpacked to (server side)
+	noBaseImage     bool              // indicates that this build does not start from any base image, but is being built from an empty file system.
 
 	// Set resource restrictions for build containers
 	cpuSetCpus   string

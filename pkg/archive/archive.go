@@ -55,9 +55,13 @@ type (
 	}
 
 	// Archiver allows the reuse of most utility functions of this package
-	// with a pluggable Untar function.
+	// with a pluggable Untar function. Also, to facilitate the passing of
+	// specific id mappings for untar, an archiver can be created with maps
+	// which will then be passed to Untar operations
 	Archiver struct {
-		Untar func(io.Reader, string, *TarOptions) error
+		Untar   func(io.Reader, string, *TarOptions) error
+		UidMaps []idtools.IDMap
+		GidMaps []idtools.IDMap
 	}
 
 	// breakoutError is used to differentiate errors related to breaking out
@@ -69,7 +73,7 @@ type (
 var (
 	// ErrNotImplemented is the error message of function not implemented.
 	ErrNotImplemented = errors.New("Function not implemented")
-	defaultArchiver   = &Archiver{Untar}
+	defaultArchiver   = &Archiver{Untar: Untar, UidMaps: nil, GidMaps: nil}
 )
 
 const (
@@ -745,7 +749,15 @@ func (archiver *Archiver) TarUntar(src, dst string) error {
 		return err
 	}
 	defer archive.Close()
-	return archiver.Untar(archive, dst, nil)
+
+	var options *TarOptions
+	if archiver.UidMaps != nil || archiver.GidMaps != nil {
+		options = &TarOptions{
+			UidMaps: archiver.UidMaps,
+			GidMaps: archiver.GidMaps,
+		}
+	}
+	return archiver.Untar(archive, dst, options)
 }
 
 // TarUntar is a convenience function which calls Tar and Untar, with the output of one piped into the other.
@@ -843,6 +855,17 @@ func (archiver *Archiver) CopyFileWithTar(src, dst string) (err error) {
 		hdr.Name = filepath.Base(dst)
 		hdr.Mode = int64(chmodTarEntry(os.FileMode(hdr.Mode)))
 
+		xUid, err := idtools.TranslateIDToHost(hdr.Uid, archiver.UidMaps)
+		if err != nil {
+			return err
+		}
+		xGid, err := idtools.TranslateIDToHost(hdr.Gid, archiver.GidMaps)
+		if err != nil {
+			return err
+		}
+		hdr.Uid = xUid
+		hdr.Gid = xGid
+
 		tw := tar.NewWriter(w)
 		defer tw.Close()
 		if err := tw.WriteHeader(hdr); err != nil {
@@ -858,7 +881,14 @@ func (archiver *Archiver) CopyFileWithTar(src, dst string) (err error) {
 			err = er
 		}
 	}()
-	return archiver.Untar(r, filepath.Dir(dst), nil)
+	var options *TarOptions
+	if archiver.UidMaps != nil || archiver.GidMaps != nil {
+		options = &TarOptions{
+			UidMaps: archiver.UidMaps,
+			GidMaps: archiver.GidMaps,
+		}
+	}
+	return archiver.Untar(r, filepath.Dir(dst), options)
 }
 
 // CopyFileWithTar emulates the behavior of the 'cp' command-line

@@ -1047,6 +1047,13 @@ func (daemon *Daemon) containerGraph() *graphdb.Database {
 	return daemon.containerGraphDB
 }
 
+// GetUidGidMaps returns the current daemon's user namespace settings
+// for the full uid and gid maps which will be applied to containers
+// started in this instance.
+func (daemon *Daemon) GetUidGidMaps() ([]idtools.IDMap, []idtools.IDMap) {
+	return daemon.uidMaps, daemon.gidMaps
+}
+
 // GetRemappedUidGid returns the current daemon's uid and gid values
 // if user namespaces are in use for this daemon instance.  If not
 // this function will return "real" root values of 0, 0.
