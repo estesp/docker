@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -16,10 +17,6 @@ var (
 	// the private registry to use for tests
 	privateRegistryURL = "127.0.0.1:5000"
 
-	dockerBasePath       = "/var/lib/docker"
-	volumesConfigPath    = dockerBasePath + "/volumes"
-	containerStoragePath = dockerBasePath + "/containers"
-
 	runtimePath    = "/var/run/docker"
 	execDriverPath = runtimePath + "/execdriver/native"
 
@@ -34,6 +31,13 @@ var (
 	// of the daemon. This is initialised in docker_utils by sending
 	// a version call to the daemon and examining the response header.
 	daemonPlatform string
+
+	// For a local daemon on Linux, these values will be used for testing
+	// user namespace support as the standard graph path(s) will be
+	// appended with the root remapped uid.gid prefix
+	dockerBasePath       string
+	volumesConfigPath    string
+	containerStoragePath string
 )
 
 func init() {
@@ -75,4 +79,20 @@ func init() {
 		isLocalDaemon = true
 	}
 
+	// This is only used for a tests with local daemon true (Linux-only today)
+	// default is "/var/lib/docker", but we'll try and ask the
+	// /info endpoint for the specific root dir
+	dockerBasePath = "/var/lib/docker"
+	type Info struct {
+		DockerRootDir string
+	}
+	var i Info
+	status, b, err := sockRequest("GET", "/info", nil)
+	if err == nil && status == 200 {
+		if err = json.Unmarshal(b, &i); err == nil {
+			dockerBasePath = i.DockerRootDir
+		}
+	}
+	volumesConfigPath = dockerBasePath + "/volumes"
+	containerStoragePath = dockerBasePath + "/containers"
 }

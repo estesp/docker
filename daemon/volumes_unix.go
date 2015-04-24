@@ -289,6 +289,18 @@ func (daemon *Daemon) registerMountPoints(container *Container, hostConfig *runc
 	binds := map[string]bool{}
 	mountPoints := map[string]*mountPoint{}
 
+	rootUid, rootGid := daemon.GetRemappedUidGid()
+	specialBinds := map[string]bool{}
+	if container.ResolvConfPath != "" {
+		specialBinds[container.ResolvConfPath] = true
+	}
+	if container.HostsPath != "" {
+		specialBinds[container.HostsPath] = true
+	}
+	if container.HostnamePath != "" {
+		specialBinds[container.HostnamePath] = true
+	}
+
 	// 1. Read already configured mount points.
 	for name, point := range container.MountPoints {
 		mountPoints[name] = point
@@ -333,6 +345,15 @@ func (daemon *Daemon) registerMountPoints(container *Container, hostConfig *runc
 		bind, err := parseBindMount(b, hostConfig.VolumeDriver)
 		if err != nil {
 			return err
+		}
+
+		//if user namespaces are in use, we need to chown the special mounts
+		//(/etc/resolv.conf, /etc/hosts, /etc/hostname) to the remapped root
+		//to allow containers to continue to control their own settings
+		if specialBinds[bind.Source] {
+			if err := os.Chown(bind.Source, rootUid, rootGid); err != nil {
+				return fmt.Errorf("Cannot chown special mount %q to remapped root uid/gid: %v", bind.Source, err)
+			}
 		}
 
 		if binds[bind.Destination] {

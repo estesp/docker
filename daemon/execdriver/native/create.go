@@ -6,12 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"os"
 	"strings"
 	"syscall"
 
 	"github.com/docker/docker/daemon/execdriver"
 	"github.com/docker/docker/pkg/idtools"
+
 	"github.com/opencontainers/runc/libcontainer/apparmor"
 	"github.com/opencontainers/runc/libcontainer/configs"
 	"github.com/opencontainers/runc/libcontainer/devices"
@@ -285,10 +285,6 @@ func (d *Driver) setupMounts(container *configs.Config, c *execdriver.Command) e
 		}
 		if m.Slave {
 			flags |= syscall.MS_SLAVE
-		}
-
-		if err := os.Chown(m.Source, c.RemappedRoot.Uid, c.RemappedRoot.Gid); err != nil {
-			return err
 		}
 
 		container.Mounts = append(container.Mounts, &configs.Mount{
