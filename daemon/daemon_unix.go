@@ -203,6 +203,9 @@ func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *runconfig.HostC
 		warnings = append(warnings, "IPv4 forwarding is disabled. Networking will not work.")
 		logrus.Warnf("IPv4 forwarding is disabled. Networking will not work")
 	}
+	if hostConfig.Privileged && daemon.Config().RemappedRoot != "" {
+		return warnings, fmt.Errorf("Privileged mode is incompatible with user namespaces/root remapping")
+	}
 	return warnings, nil
 }
 

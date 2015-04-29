@@ -591,6 +591,10 @@ func NewDaemon(config *Config, registryService *registry.Service) (daemon *Daemo
 	// on Windows to dump Go routine stacks
 	setupDumpStackTrap()
 
+	if config.ExecDriver != "native" && config.RemappedRoot != "" {
+		return nil, fmt.Errorf("User namespace root remapping is only supported with the native execdriver")
+	}
+
 	// if the daemon was started with remapped root option, parse
 	// the config option to the int uid,gid values
 	var (
