@@ -120,6 +120,11 @@ func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *runconfig.HostC
 	warnings := []string{}
 	sysInfo := sysinfo.New(true)
 
+	warnings, err := daemon.verifyExperimentalContainerSettings(hostConfig, config)
+	if err != nil {
+		return warnings, err
+	}
+
 	if hostConfig.LxcConf.Len() > 0 && !strings.Contains(daemon.ExecutionDriver().Name(), "lxc") {
 		return warnings, fmt.Errorf("Cannot use --lxc-conf with execdriver: %s", daemon.ExecutionDriver().Name())
 	}
@@ -202,9 +207,6 @@ func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *runconfig.HostC
 	if sysInfo.IPv4ForwardingDisabled {
 		warnings = append(warnings, "IPv4 forwarding is disabled. Networking will not work.")
 		logrus.Warnf("IPv4 forwarding is disabled. Networking will not work")
-	}
-	if hostConfig.Privileged && daemon.Config().RemappedRoot != "" {
-		return warnings, fmt.Errorf("Privileged mode is incompatible with user namespaces/root remapping")
 	}
 	return warnings, nil
 }

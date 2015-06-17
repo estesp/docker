@@ -11,7 +11,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
@@ -33,7 +32,6 @@ import (
 	"github.com/docker/docker/image"
 	"github.com/docker/docker/pkg/archive"
 	"github.com/docker/docker/pkg/broadcastwriter"
-	"github.com/docker/docker/pkg/directory"
 	"github.com/docker/docker/pkg/fileutils"
 	"github.com/docker/docker/pkg/graphdb"
 	"github.com/docker/docker/pkg/idtools"
@@ -591,31 +589,13 @@ func NewDaemon(config *Config, registryService *registry.Service) (daemon *Daemo
 	// on Windows to dump Go routine stacks
 	setupDumpStackTrap()
 
-	if config.ExecDriver != "native" && config.RemappedRoot != "" {
-		return nil, fmt.Errorf("User namespace root remapping is only supported with the native execdriver")
+	uidMaps, gidMaps, err := setupRemappedRoot(config)
+	if err != nil {
+		return nil, err
 	}
-
-	// if the daemon was started with remapped root option, parse
-	// the config option to the int uid,gid values
-	var (
-		uidMaps, gidMaps []idtools.IDMap
-		rootUid, rootGid int
-	)
-	if config.RemappedRoot != "" {
-		uid, gid, err := parseRemappedRoot(config.RemappedRoot)
-		if err != nil {
-			return nil, err
-		}
-		rootUid = uid
-		rootGid = gid
-		logrus.Infof("User namespaces: root will be remapped to uid:gid: %d:%d", uid, gid)
-
-		if uMaps, gMaps, err := idtools.CreateIDMapsForRoot(uid, gid); err != nil {
-			return nil, fmt.Errorf("Can't create ID mappings for remapped root: %v", err)
-		} else {
-			uidMaps = uMaps
-			gidMaps = gMaps
-		}
+	rootUid, rootGid, err := idtools.GetRootUidGid(uidMaps, gidMaps)
+	if err != nil {
+		return nil, err
 	}
 
 	// get the canonical path to the Docker root directory
@@ -629,53 +609,8 @@ func NewDaemon(config *Config, registryService *registry.Service) (daemon *Daemo
 		}
 	}
 
-	// the main docker root needs to be accessible by all users, as user namespace support
-	// will create subdirectories owned by either a) the real system root (when no remapping
-	// is setup) or b) the remapped root host ID (when --root=uid:gid is used)
-	// for "first time" users of user namespaces, we need to migrate the current directory
-	// contents to the "0.0" (root == root "namespace" daemon root)
-	nsRoot := "0.0"
-	if _, err := os.Stat(realRoot); err == nil {
-		// root current exists; we need to check for a prior migration
-		if _, err := os.Stat(path.Join(realRoot, nsRoot)); err != nil && os.IsNotExist(err) {
-			// need to migrate current root to "0.0" subroot
-			// 1. create non-usernamespaced root as "0.0"
-			if err := os.Mkdir(path.Join(realRoot, nsRoot), 0700); err != nil {
-				return nil, fmt.Errorf("Cannot create daemon root %q: %v", path.Join(realRoot, nsRoot), err)
-			}
-			// 2. move current root content to "0.0" new subroot
-			if err := directory.MoveDirToSubdir(realRoot, nsRoot); err != nil {
-				return nil, fmt.Errorf("Cannot migrate current daemon root %q for user namespaces: %v", realRoot, err)
-			}
-			// 3. chmod outer root to 755
-			if chmodErr := os.Chmod(realRoot, 0755); chmodErr != nil {
-				return nil, chmodErr
-			}
-		}
-	} else if os.IsNotExist(err) {
-		// no root exists yet, create it 0755 with root:root ownership
-		if err := os.MkdirAll(realRoot, 0755); err != nil {
-			return nil, err
-		}
-		// create the "0.0" subroot (so no future "migration" happens of the root)
-		if err := os.Mkdir(path.Join(realRoot, nsRoot), 0700); err != nil {
-			return nil, err
-		}
-	}
-
-	// for user namespaces we will create a subtree underneath the specified root
-	// with any/all specified remapped root uid/gid options on the daemon creating
-	// a new subdirectory with ownership set to the remapped uid/gid (so as to allow
-	// `chdir()` to work for containers namespaced to that uid/gid)
-	if config.RemappedRoot != "" {
-		nsRoot = fmt.Sprintf("%d.%d", rootUid, rootGid)
-	}
-	config.Root = path.Join(realRoot, nsRoot)
-	logrus.Debugf("Creating actual daemon root: %s", config.Root)
-
-	// Create the root directory if it doesn't exists
-	if err := idtools.MkdirAllAs(config.Root, 0700, rootUid, rootGid); err != nil {
-		return nil, fmt.Errorf("Cannot create daemon root: %s: %v", config.Root, err)
+	if err = setupDaemonRoot(config, realRoot, rootUid, rootGid); err != nil {
+		return nil, err
 	}
 
 	// set up the tmpDir to use a canonical path
