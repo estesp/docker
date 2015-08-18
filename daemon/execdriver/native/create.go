@@ -220,6 +220,13 @@ func (d *Driver) setupRemappedRoot(container *configs.Config, c *execdriver.Comm
 		node.Uid = uint32(c.RemappedRoot.Uid)
 		node.Gid = uint32(c.RemappedRoot.Gid)
 	}
+	//HACK HACK HACK
+	// clear readonly for cgroup
+	for i := range container.Mounts {
+		if container.Mounts[i].Device == "cgroup" {
+			container.Mounts[i].Flags &= ^syscall.MS_RDONLY
+		}
+	}
 
 	return nil
 }
