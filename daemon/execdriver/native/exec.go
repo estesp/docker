@@ -10,6 +10,7 @@ import (
 
 	"github.com/docker/docker/daemon/execdriver"
 	"github.com/docker/libcontainer"
+	"github.com/docker/libcontainer/configs"
 	_ "github.com/docker/libcontainer/nsenter"
 	"github.com/docker/libcontainer/utils"
 )
@@ -24,15 +25,21 @@ func (d *driver) Exec(c *execdriver.Command, processConfig *execdriver.ProcessCo
 	var term execdriver.Terminal
 	var err error
 
+	user := c.ProcessConfig.User
+	config := active.Config()
+	if config.Namespaces.Contains(configs.NEWUSER) {
+		//if user namespaces are enabled, set user to "0" so uid/gid set to 0
+		user = "0"
+	}
+
 	p := &libcontainer.Process{
 		Args: append([]string{processConfig.Entrypoint}, processConfig.Arguments...),
 		Env:  c.ProcessConfig.Env,
 		Cwd:  c.WorkingDir,
-		User: c.ProcessConfig.User,
+		User: user,
 	}
 
 	if processConfig.Tty {
-		config := active.Config()
 		rootuid, err := config.HostUID()
 		if err != nil {
 			return -1, err
