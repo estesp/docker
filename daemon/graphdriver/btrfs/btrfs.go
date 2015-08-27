@@ -41,11 +41,11 @@ func Init(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (grap
 		return nil, graphdriver.ErrPrerequisites
 	}
 
-	rootUid, rootGid, err := idtools.GetRootUidGid(uidMaps, gidMaps)
+	rootUID, rootGID, err := idtools.GetRootUIDGID(uidMaps, gidMaps)
 	if err != nil {
 		return nil, err
 	}
-	if err := idtools.MkdirAllAs(home, 0700, rootUid, rootGid); err != nil {
+	if err := idtools.MkdirAllAs(home, 0700, rootUID, rootGID); err != nil {
 		return nil, err
 	}
 

@@ -349,8 +349,8 @@ func ExportChanges(dir string, changes []Change, uidMaps, gidMaps []idtools.IDMa
 			TarWriter: tar.NewWriter(writer),
 			Buffer:    pools.BufioWriter32KPool.Get(nil),
 			SeenFiles: make(map[uint64]string),
-			UidMaps:   uidMaps,
-			GidMaps:   gidMaps,
+			UIDMaps:   uidMaps,
+			GIDMaps:   gidMaps,
 		}
 		// this buffer is needed for the duration of this piped stream
 		defer pools.BufioWriter32KPool.Put(ta.Buffer)

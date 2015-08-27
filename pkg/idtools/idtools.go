@@ -8,25 +8,29 @@ import (
 	"github.com/docker/docker/pkg/system"
 )
 
+// IDMap contains a single entry for user namespace range remapping. An array
+// of IDMap entries represents the structure that will be provided to the Linux
+// kernel for creating a user namespace.
 type IDMap struct {
 	ContainerID int `json:"container_id"`
 	HostID      int `json:"host_id"`
 	Size        int `json:"size"`
 }
 
-// Create a directory (include any along the path) and modify ownership to the
-// requested uid/gid.  If the directory already exists, still changes ownership
-func MkdirAllAs(path string, mode os.FileMode, ownerUid, ownerGid int) error {
-	return mkdirAs(path, mode, ownerUid, ownerGid, true)
+// MkdirAllAs creates a directory (include any along the path) and then modifies
+// ownership to the requested uid/gid.  If the directory already exists, this
+// function will still change ownership to the requested uid/gid pair.
+func MkdirAllAs(path string, mode os.FileMode, ownerUID, ownerGID int) error {
+	return mkdirAs(path, mode, ownerUID, ownerGID, true)
 }
 
-// Create a directory and modify ownership to the requested uid/gid.  If the
-// directory already exists, still changes ownership
-func MkdirAs(path string, mode os.FileMode, ownerUid, ownerGid int) error {
-	return mkdirAs(path, mode, ownerUid, ownerGid, false)
+// MkdirAs creates a directory and then modifies ownership to the requested uid/gid.
+// If the directory already exists, this function still changes ownership
+func MkdirAs(path string, mode os.FileMode, ownerUID, ownerGID int) error {
+	return mkdirAs(path, mode, ownerUID, ownerGID, false)
 }
 
-func mkdirAs(path string, mode os.FileMode, ownerUid, ownerGid int, mkAll bool) error {
+func mkdirAs(path string, mode os.FileMode, ownerUID, ownerGID int, mkAll bool) error {
 
 	if mkAll {
 		if err := system.MkdirAll(path, mode); err != nil && !os.IsExist(err) {
@@ -38,71 +42,70 @@ func mkdirAs(path string, mode os.FileMode, ownerUid, ownerGid int, mkAll bool) 
 		}
 	}
 	// even if it existed, we will chown to change ownership as requested
-	if err := os.Chown(path, ownerUid, ownerGid); err != nil {
+	if err := os.Chown(path, ownerUID, ownerGID); err != nil {
 		return err
 	}
 	return nil
 }
 
-// Helper function to retrieve remapped root uid/gid in container
+// GetRootUIDGID retrieves the remapped root uid/gid pair from the set of maps.
 // If the maps are empty, then the root uid/gid will default to "real" 0/0
-func GetRootUidGid(uidMap, gidMap []IDMap) (int, int, error) {
+func GetRootUIDGID(uidMap, gidMap []IDMap) (int, int, error) {
 	var uid, gid int
 
 	if uidMap != nil {
-		xUid, err := TranslateIDToHost(0, uidMap)
+		xUID, err := TranslateIDToHost(0, uidMap)
 		if err != nil {
 			return -1, -1, err
 		}
-		uid = xUid
+		uid = xUID
 	}
 	if gidMap != nil {
-		xGid, err := TranslateIDToHost(0, gidMap)
+		xGID, err := TranslateIDToHost(0, gidMap)
 		if err != nil {
 			return -1, -1, err
 		}
-		gid = xGid
+		gid = xGID
 	}
 	return uid, gid, nil
 }
 
-// Given an id mapping, translate a host ID to the proper container ID
-// If no map is provided, then the translation assumes a 1-to-1 mapping
-// and returns the passed in id #
-func TranslateIDToContainer(hostId int, idMap []IDMap) (int, error) {
+// TranslateIDToContainer takes an id mapping, and uses it to translate a
+// host ID to the remapped ID. If no map is provided, then the translation
+// assumes a 1-to-1 mapping and returns the passed in id
+func TranslateIDToContainer(hostID int, idMap []IDMap) (int, error) {
 
 	if idMap == nil {
-		return hostId, nil
+		return hostID, nil
 	}
 	for _, m := range idMap {
-		if (hostId >= m.HostID) && (hostId <= (m.HostID + m.Size - 1)) {
-			contId := m.ContainerID + (hostId - m.HostID)
-			return contId, nil
+		if (hostID >= m.HostID) && (hostID <= (m.HostID + m.Size - 1)) {
+			contID := m.ContainerID + (hostID - m.HostID)
+			return contID, nil
 		}
 	}
-	return -1, fmt.Errorf("Host ID %d cannot be mapped to a container ID", hostId)
+	return -1, fmt.Errorf("Host ID %d cannot be mapped to a container ID", hostID)
 }
 
-// Given an id mapping, translate a container ID to the proper host ID
-// If no map is provided, then the translation assumes a 1-to-1 mapping
-// and returns the passed in id #
-func TranslateIDToHost(contId int, idMap []IDMap) (int, error) {
+// TranslateIDToHost takes an id mapping and a remapped ID, and translates the
+// ID to the mapped host ID. If no map is provided, then the translation
+// assumes a 1-to-1 mapping and returns the passed in id #
+func TranslateIDToHost(contID int, idMap []IDMap) (int, error) {
 
 	if idMap == nil {
-		return contId, nil
+		return contID, nil
 	}
 	for _, m := range idMap {
-		if (contId >= m.ContainerID) && (contId <= (m.ContainerID + m.Size - 1)) {
-			hostId := m.HostID + (contId - m.ContainerID)
-			return hostId, nil
+		if (contID >= m.ContainerID) && (contID <= (m.ContainerID + m.Size - 1)) {
+			hostID := m.HostID + (contID - m.ContainerID)
+			return hostID, nil
 		}
 	}
-	return -1, fmt.Errorf("Container ID %d cannot be mapped to a host ID", contId)
+	return -1, fmt.Errorf("Container ID %d cannot be mapped to a host ID", contID)
 }
 
-// Create libcontainer/native execdriver consumable uid/gid mappings for a single
-// host uid/gid pair to be treated as root.  This is useful for a simple remap of root
-// rather than a more complex mapping of multiple IDs on host -> container
+// CreateIDMapsForRoot takes a requested remapped uid/gid for root (0,0), and creates
+// the proper mapping set for the rest of the uid/gid range.
 func CreateIDMapsForRoot(uid, gid int) ([]IDMap, []IDMap, error) {
 
 	// Go and libcontainer expect int (32-bit signed) for uids/gids to handle

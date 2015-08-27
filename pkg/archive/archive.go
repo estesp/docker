@@ -42,8 +42,8 @@ type (
 		ExcludePatterns  []string
 		Compression      Compression
 		NoLchown         bool
-		UidMaps          []idtools.IDMap
-		GidMaps          []idtools.IDMap
+		UIDMaps          []idtools.IDMap
+		GIDMaps          []idtools.IDMap
 		ChownOpts        *TarChownOptions
 		IncludeSourceDir bool
 		// When unpacking, specifies whether overwriting a directory with a
@@ -60,8 +60,8 @@ type (
 	// which will then be passed to Untar operations
 	Archiver struct {
 		Untar   func(io.Reader, string, *TarOptions) error
-		UidMaps []idtools.IDMap
-		GidMaps []idtools.IDMap
+		UIDMaps []idtools.IDMap
+		GIDMaps []idtools.IDMap
 	}
 
 	// breakoutError is used to differentiate errors related to breaking out
@@ -73,7 +73,7 @@ type (
 var (
 	// ErrNotImplemented is the error message of function not implemented.
 	ErrNotImplemented = errors.New("Function not implemented")
-	defaultArchiver   = &Archiver{Untar: Untar, UidMaps: nil, GidMaps: nil}
+	defaultArchiver   = &Archiver{Untar: Untar, UIDMaps: nil, GIDMaps: nil}
 )
 
 const (
@@ -201,8 +201,8 @@ type tarAppender struct {
 
 	// for hardlink mapping
 	SeenFiles map[uint64]string
-	UidMaps   []idtools.IDMap
-	GidMaps   []idtools.IDMap
+	UIDMaps   []idtools.IDMap
+	GIDMaps   []idtools.IDMap
 }
 
 // canonicalTarName provides a platform-independent and consistent posix-style
@@ -272,21 +272,21 @@ func (ta *tarAppender) addTarFile(path, name string) error {
 
 	//handle re-mapping container ID mappings back to host ID mappings before
 	//writing tar headers/files
-	if ta.UidMaps != nil || ta.GidMaps != nil {
-		uid, gid, err := getFileUidGid(fi.Sys())
+	if ta.UIDMaps != nil || ta.GIDMaps != nil {
+		uid, gid, err := getFileUIDGID(fi.Sys())
 		if err != nil {
 			return err
 		}
-		xUid, err := idtools.TranslateIDToContainer(uid, ta.UidMaps)
+		xUID, err := idtools.TranslateIDToContainer(uid, ta.UIDMaps)
 		if err != nil {
 			return err
 		}
-		xGid, err := idtools.TranslateIDToContainer(gid, ta.GidMaps)
+		xGID, err := idtools.TranslateIDToContainer(gid, ta.GIDMaps)
 		if err != nil {
 			return err
 		}
-		hdr.Uid = xUid
-		hdr.Gid = xGid
+		hdr.Uid = xUID
+		hdr.Gid = xGID
 	}
 
 	if err := ta.TarWriter.WriteHeader(hdr); err != nil {
@@ -455,8 +455,8 @@ func TarWithOptions(srcPath string, options *TarOptions) (io.ReadCloser, error) 
 			TarWriter: tar.NewWriter(compressWriter),
 			Buffer:    pools.BufioWriter32KPool.Get(nil),
 			SeenFiles: make(map[uint64]string),
-			UidMaps:   options.UidMaps,
-			GidMaps:   options.GidMaps,
+			UIDMaps:   options.UIDMaps,
+			GIDMaps:   options.GIDMaps,
 		}
 
 		defer func() {
@@ -663,15 +663,15 @@ loop:
 
 		// if the options contain a unique uid, gid for untar, pass them in via the hdr
 		// so lchown sets the requested uid/gid after writing the file
-		if options.UidMaps != nil {
-			xUid, err := idtools.TranslateIDToHost(hdr.Uid, options.UidMaps)
+		if options.UIDMaps != nil {
+			xUID, err := idtools.TranslateIDToHost(hdr.Uid, options.UIDMaps)
 			if err != nil {
 				return err
 			}
-			hdr.Uid = xUid
+			hdr.Uid = xUID
 		}
-		if options.GidMaps != nil {
-			xGid, err := idtools.TranslateIDToHost(hdr.Gid, options.GidMaps)
+		if options.GIDMaps != nil {
+			xGid, err := idtools.TranslateIDToHost(hdr.Gid, options.GIDMaps)
 			if err != nil {
 				return err
 			}
@@ -751,10 +751,10 @@ func (archiver *Archiver) TarUntar(src, dst string) error {
 	defer archive.Close()
 
 	var options *TarOptions
-	if archiver.UidMaps != nil || archiver.GidMaps != nil {
+	if archiver.UIDMaps != nil || archiver.GIDMaps != nil {
 		options = &TarOptions{
-			UidMaps: archiver.UidMaps,
-			GidMaps: archiver.GidMaps,
+			UIDMaps: archiver.UIDMaps,
+			GIDMaps: archiver.GIDMaps,
 		}
 	}
 	return archiver.Untar(archive, dst, options)
@@ -855,16 +855,16 @@ func (archiver *Archiver) CopyFileWithTar(src, dst string) (err error) {
 		hdr.Name = filepath.Base(dst)
 		hdr.Mode = int64(chmodTarEntry(os.FileMode(hdr.Mode)))
 
-		xUid, err := idtools.TranslateIDToHost(hdr.Uid, archiver.UidMaps)
+		xUID, err := idtools.TranslateIDToHost(hdr.Uid, archiver.UIDMaps)
 		if err != nil {
 			return err
 		}
-		xGid, err := idtools.TranslateIDToHost(hdr.Gid, archiver.GidMaps)
+		xGID, err := idtools.TranslateIDToHost(hdr.Gid, archiver.GIDMaps)
 		if err != nil {
 			return err
 		}
-		hdr.Uid = xUid
-		hdr.Gid = xGid
+		hdr.Uid = xUID
+		hdr.Gid = xGID
 
 		tw := tar.NewWriter(w)
 		defer tw.Close()
@@ -882,10 +882,10 @@ func (archiver *Archiver) CopyFileWithTar(src, dst string) (err error) {
 		}
 	}()
 	var options *TarOptions
-	if archiver.UidMaps != nil || archiver.GidMaps != nil {
+	if archiver.UIDMaps != nil || archiver.GIDMaps != nil {
 		options = &TarOptions{
-			UidMaps: archiver.UidMaps,
-			GidMaps: archiver.GidMaps,
+			UIDMaps: archiver.UIDMaps,
+			GIDMaps: archiver.GIDMaps,
 		}
 	}
 	return archiver.Untar(r, filepath.Dir(dst), options)

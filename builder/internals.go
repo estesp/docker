@@ -711,8 +711,8 @@ func (b *builder) checkPathForAddition(orig string) error {
 func (b *builder) addContext(container *daemon.Container, orig, dest string, decompress bool) error {
 	var (
 		err     error
-		rootUid int
-		rootGid int
+		rootUID int
+		rootGID int
 
 		destExists = true
 		origPath   = filepath.Join(b.contextPath, orig)
@@ -722,7 +722,7 @@ func (b *builder) addContext(container *daemon.Container, orig, dest string, dec
 	// Work in daemon-local OS specific file paths
 	dest = filepath.FromSlash(dest)
 	if b.defaultArchiver != nil {
-		rootUid, rootGid, err = idtools.GetRootUidGid(b.defaultArchiver.UidMaps, b.defaultArchiver.GidMaps)
+		rootUID, rootGID, err = idtools.GetRootUIDGID(b.defaultArchiver.UIDMaps, b.defaultArchiver.GIDMaps)
 		if err != nil {
 			return err
 		}
@@ -756,7 +756,7 @@ func (b *builder) addContext(container *daemon.Container, orig, dest string, dec
 	}
 
 	if fi.IsDir() {
-		return copyAsDirectory(origPath, destPath, destExists, rootUid, rootGid, b.defaultArchiver)
+		return copyAsDirectory(origPath, destPath, destExists, rootUID, rootGID, b.defaultArchiver)
 	}
 
 	// If we are adding a remote file (or we've been told not to decompress), do not try to untar it
@@ -796,10 +796,10 @@ func (b *builder) addContext(container *daemon.Container, orig, dest string, dec
 		resPath = filepath.Join(destPath, filepath.Base(origPath))
 	}
 
-	return fixPermissions(origPath, resPath, rootUid, rootGid, destExists)
+	return fixPermissions(origPath, resPath, rootUID, rootGID, destExists)
 }
 
-func copyAsDirectory(source, destination string, destExisted bool, rootUid, rootGid int, archiver *archive.Archiver) error {
+func copyAsDirectory(source, destination string, destExisted bool, rootUID, rootGID int, archiver *archive.Archiver) error {
 	if archiver != nil {
 		if err := archiver.CopyWithTar(source, destination); err != nil {
 			return err
@@ -809,7 +809,7 @@ func copyAsDirectory(source, destination string, destExisted bool, rootUid, root
 			return err
 		}
 	}
-	return fixPermissions(source, destination, rootUid, rootGid, destExisted)
+	return fixPermissions(source, destination, rootUID, rootGID, destExisted)
 }
 
 func (b *builder) clearTmp() {

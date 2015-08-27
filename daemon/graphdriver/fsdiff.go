@@ -125,8 +125,8 @@ func (gdw *naiveDiffDriver) ApplyDiff(id, parent string, diff archive.Reader) (s
 	}
 	defer driver.Put(id)
 
-	options := &archive.TarOptions{UidMaps: gdw.uidMaps,
-		GidMaps: gdw.gidMaps}
+	options := &archive.TarOptions{UIDMaps: gdw.uidMaps,
+		GIDMaps: gdw.gidMaps}
 	start := time.Now().UTC()
 	logrus.Debugf("Start untar layer")
 	if size, err = chrootarchive.ApplyUncompressedLayer(layerFs, diff, options); err != nil {

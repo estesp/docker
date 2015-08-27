@@ -111,14 +111,14 @@ func Init(root string, options []string, uidMaps, gidMaps []idtools.IDMap) (grap
 		gidMaps: gidMaps,
 	}
 
-	rootUid, rootGid, err := idtools.GetRootUidGid(uidMaps, gidMaps)
+	rootUID, rootGID, err := idtools.GetRootUIDGID(uidMaps, gidMaps)
 	if err != nil {
 		return nil, err
 	}
 	// Create the root aufs driver dir and return
 	// if it already exists
 	// If not populate the dir structure
-	if err := idtools.MkdirAllAs(root, 0755, rootUid, rootGid); err != nil {
+	if err := idtools.MkdirAllAs(root, 0755, rootUID, rootGID); err != nil {
 		if os.IsExist(err) {
 			return a, nil
 		}
@@ -131,7 +131,7 @@ func Init(root string, options []string, uidMaps, gidMaps []idtools.IDMap) (grap
 
 	// Populate the dir structure
 	for _, p := range paths {
-		if err := idtools.MkdirAllAs(path.Join(root, p), 0755, rootUid, rootGid); err != nil {
+		if err := idtools.MkdirAllAs(path.Join(root, p), 0755, rootUID, rootGID); err != nil {
 			return nil, err
 		}
 	}
@@ -231,12 +231,12 @@ func (a *Driver) createDirsFor(id string) error {
 		"diff",
 	}
 
-	rootUid, rootGid, err := idtools.GetRootUidGid(a.uidMaps, a.gidMaps)
+	rootUID, rootGID, err := idtools.GetRootUIDGID(a.uidMaps, a.gidMaps)
 	if err != nil {
 		return err
 	}
 	for _, p := range paths {
-		if err := idtools.MkdirAllAs(path.Join(a.rootPath(), p, id), 0755, rootUid, rootGid); err != nil {
+		if err := idtools.MkdirAllAs(path.Join(a.rootPath(), p, id), 0755, rootUID, rootGID); err != nil {
 			return err
 		}
 	}
@@ -343,15 +343,15 @@ func (a *Driver) Diff(id, parent string) (archive.Archive, error) {
 	return archive.TarWithOptions(path.Join(a.rootPath(), "diff", id), &archive.TarOptions{
 		Compression:     archive.Uncompressed,
 		ExcludePatterns: []string{".wh..wh.*"},
-		UidMaps:         a.uidMaps,
-		GidMaps:         a.gidMaps,
+		UIDMaps:         a.uidMaps,
+		GIDMaps:         a.gidMaps,
 	})
 }
 
 func (a *Driver) applyDiff(id string, diff archive.Reader) error {
 	return chrootarchive.UntarUncompressed(diff, path.Join(a.rootPath(), "diff", id), &archive.TarOptions{
-		UidMaps: a.uidMaps,
-		GidMaps: a.gidMaps,
+		UIDMaps: a.uidMaps,
+		GIDMaps: a.gidMaps,
 	})
 }
 

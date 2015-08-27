@@ -109,12 +109,12 @@ func NewGraph(root string, driver graphdriver.Driver, uidMaps, gidMaps []idtools
 		return nil, err
 	}
 
-	rootUid, rootGid, err := idtools.GetRootUidGid(uidMaps, gidMaps)
+	rootUID, rootGID, err := idtools.GetRootUIDGID(uidMaps, gidMaps)
 	if err != nil {
 		return nil, err
 	}
 	// Create the root directory if it doesn't exists
-	if err := idtools.MkdirAllAs(root, 0700, rootUid, rootGid); err != nil && !os.IsExist(err) {
+	if err := idtools.MkdirAllAs(root, 0700, rootUID, rootGID); err != nil && !os.IsExist(err) {
 		return nil, err
 	}
 
@@ -334,11 +334,11 @@ func (graph *Graph) TempLayerArchive(id string, sf *streamformatter.StreamFormat
 // mktemp creates a temporary sub-directory inside the graph's filesystem.
 func (graph *Graph) mktemp(id string) (string, error) {
 	dir := filepath.Join(graph.root, "_tmp", stringid.GenerateNonCryptoID())
-	rootUid, rootGid, err := idtools.GetRootUidGid(graph.uidMaps, graph.gidMaps)
+	rootUID, rootGID, err := idtools.GetRootUIDGID(graph.uidMaps, graph.gidMaps)
 	if err != nil {
 		return "", err
 	}
-	if err := idtools.MkdirAllAs(dir, 0700, rootUid, rootGid); err != nil {
+	if err := idtools.MkdirAllAs(dir, 0700, rootUID, rootGID); err != nil {
 		return "", err
 	}
 	return dir, nil

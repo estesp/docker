@@ -69,6 +69,6 @@ func (s *DockerDaemonSuite) TestDaemonUserNamespaceRootSetting(c *check.C) {
 	if err != nil {
 		c.Fatal(err)
 	}
-	c.Assert(stat.Uid(), check.Equals, uint32(9999), check.Commentf("Touched file not owned by remapped root UID"))
+	c.Assert(stat.UID(), check.Equals, uint32(9999), check.Commentf("Touched file not owned by remapped root UID"))
 	c.Assert(stat.Gid(), check.Equals, uint32(9999), check.Commentf("Touched file not owned by remapped root GID"))
 }

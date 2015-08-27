@@ -269,7 +269,7 @@ func configureVolumes(config *Config) (*volumeStore, error) {
 	return newVolumeStore(volumesDriver.List()), nil
 }
 
-func configureSysInit(config *Config, rootUid, rootGid int) (string, error) {
+func configureSysInit(config *Config, rootUID, rootGID int) (string, error) {
 	localCopy := filepath.Join(config.Root, "init", fmt.Sprintf("dockerinit-%s", dockerversion.VERSION))
 	sysInitPath := utils.DockerInitPath(localCopy)
 	if sysInitPath == "" {
@@ -278,7 +278,7 @@ func configureSysInit(config *Config, rootUid, rootGid int) (string, error) {
 
 	if sysInitPath != localCopy {
 		// When we find a suitable dockerinit binary (even if it's our local binary), we copy it into config.Root at localCopy for future use (so that the original can go away without that being a problem, for example during a package upgrade).
-		if err := idtools.MkdirAs(filepath.Dir(localCopy), 0700, rootUid, rootGid); err != nil && !os.IsExist(err) {
+		if err := idtools.MkdirAs(filepath.Dir(localCopy), 0700, rootUID, rootGID); err != nil && !os.IsExist(err) {
 			return "", err
 		}
 		if _, err := fileutils.CopyFile(sysInitPath, localCopy); err != nil {
@@ -446,7 +446,7 @@ func initBridgeDriver(controller libnetwork.NetworkController, config *Config) e
 //
 // This extra layer is used by all containers as the top-most ro layer. It protects
 // the container from unwanted side-effects on the rw layer.
-func setupInitLayer(initLayer string, rootUid, rootGid int) error {
+func setupInitLayer(initLayer string, rootUID, rootGID int) error {
 	for pth, typ := range map[string]string{
 		"/dev/pts":         "dir",
 		"/dev/shm":         "dir",
@@ -469,12 +469,12 @@ func setupInitLayer(initLayer string, rootUid, rootGid int) error {
 
 		if _, err := os.Stat(filepath.Join(initLayer, pth)); err != nil {
 			if os.IsNotExist(err) {
-				if err := idtools.MkdirAllAs(filepath.Join(initLayer, filepath.Dir(pth)), 0755, rootUid, rootGid); err != nil {
+				if err := idtools.MkdirAllAs(filepath.Join(initLayer, filepath.Dir(pth)), 0755, rootUID, rootGID); err != nil {
 					return err
 				}
 				switch typ {
 				case "dir":
-					if err := idtools.MkdirAllAs(filepath.Join(initLayer, pth), 0755, rootUid, rootGid); err != nil {
+					if err := idtools.MkdirAllAs(filepath.Join(initLayer, pth), 0755, rootUID, rootGID); err != nil {
 						return err
 					}
 				case "file":
@@ -483,7 +483,7 @@ func setupInitLayer(initLayer string, rootUid, rootGid int) error {
 						return err
 					}
 					f.Close()
-					f.Chown(rootUid, rootGid)
+					f.Chown(rootUID, rootGID)
 				default:
 					if err := os.Symlink(typ, filepath.Join(initLayer, pth)); err != nil {
 						return err

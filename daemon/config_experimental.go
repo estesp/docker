@@ -29,7 +29,7 @@ func (config *Config) attachExperimentalFlags(cmd *flag.FlagSet, usageFn func(st
 //  If names are used, they are mapped to the appropriate 32-bit unsigned int
 func parseRemappedRoot(usergrp string) (int, int, error) {
 
-	var userId, groupId int
+	var userID, groupID int
 
 	idparts := strings.Split(usergrp, ":")
 	if len(idparts) > 2 {
@@ -38,24 +38,24 @@ func parseRemappedRoot(usergrp string) (int, int, error) {
 
 	if uid, err := strconv.ParseInt(idparts[0], 10, 32); err == nil {
 		// must be a uid; take it as valid
-		userId = int(uid)
+		userID = int(uid)
 		if len(idparts) == 1 {
 			// if the uid was numeric and no gid was specified, take the uid as the gid
-			groupId = userId
+			groupID = userID
 		}
 	} else {
 		luser, err := user.LookupUser(idparts[0])
 		if err != nil {
 			return 0, 0, fmt.Errorf("Error during uid lookup for %q: %v", idparts[0], err)
 		}
-		userId = luser.Uid
+		userID = luser.Uid
 		if len(idparts) == 1 {
 			// we only have a string username, and no group specified; look up gid from username as group
 			group, err := user.LookupGroup(idparts[0])
 			if err != nil {
 				return 0, 0, fmt.Errorf("Error during gid lookup for %q: %v", idparts[0], err)
 			}
-			groupId = group.Gid
+			groupID = group.Gid
 		}
 	}
 
@@ -64,15 +64,15 @@ func parseRemappedRoot(usergrp string) (int, int, error) {
 		// to a unsigned 32-bit gid
 		if gid, err := strconv.ParseInt(idparts[1], 10, 32); err == nil {
 			// must be a gid, take it as valid
-			groupId = int(gid)
+			groupID = int(gid)
 		} else {
 			// not a number; attempt a lookup
 			group, err := user.LookupGroup(idparts[1])
 			if err != nil {
 				return 0, 0, fmt.Errorf("Error during gid lookup for %q: %v", idparts[1], err)
 			}
-			groupId = group.Gid
+			groupID = group.Gid
 		}
 	}
-	return userId, groupId, nil
+	return userID, groupID, nil
 }

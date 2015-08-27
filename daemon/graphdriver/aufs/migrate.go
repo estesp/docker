@@ -40,7 +40,7 @@ func pathExists(pth string) bool {
 // For the migration we try to move the folder containing the layer files, if that
 // fails because the data is currently mounted we will fallback to creating a
 // symlink.
-func (a *Driver) Migrate(pth string, setupInit func(p string, rootUid, rootGid int) error) error {
+func (a *Driver) Migrate(pth string, setupInit func(p string, rootUID, rootGID int) error) error {
 	if pathExists(path.Join(pth, "graph")) {
 		if err := a.migrateRepositories(pth); err != nil {
 			return err
@@ -61,13 +61,13 @@ func (a *Driver) migrateRepositories(pth string) error {
 	return nil
 }
 
-func (a *Driver) migrateContainers(pth string, setupInit func(p string, rootUid, rootGid int) error) error {
+func (a *Driver) migrateContainers(pth string, setupInit func(p string, rootUID, rootGID int) error) error {
 	fis, err := ioutil.ReadDir(pth)
 	if err != nil {
 		return err
 	}
 
-	rootUid, rootGid, err := idtools.GetRootUidGid(a.uidMaps, a.gidMaps)
+	rootUID, rootGID, err := idtools.GetRootUIDGID(a.uidMaps, a.gidMaps)
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func (a *Driver) migrateContainers(pth string, setupInit func(p string, rootUid,
 					return err
 				}
 				// setup init layer
-				if err := setupInit(initPath, rootUid, rootGid); err != nil {
+				if err := setupInit(initPath, rootUID, rootGID); err != nil {
 					return err
 				}
 

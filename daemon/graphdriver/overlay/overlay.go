@@ -141,12 +141,12 @@ func Init(home string, options []string, uidMaps, gidMaps []idtools.IDMap) (grap
 		return nil, graphdriver.ErrIncompatibleFS
 	}
 
-	rootUid, rootGid, err := idtools.GetRootUidGid(uidMaps, gidMaps)
+	rootUID, rootGID, err := idtools.GetRootUIDGID(uidMaps, gidMaps)
 	if err != nil {
 		return nil, err
 	}
 	// Create the driver home dir
-	if err := idtools.MkdirAllAs(home, 0755, rootUid, rootGid); err != nil && !os.IsExist(err) {
+	if err := idtools.MkdirAllAs(home, 0755, rootUID, rootGID); err != nil && !os.IsExist(err) {
 		return nil, err
 	}
 
@@ -233,14 +233,14 @@ func (d *Driver) Cleanup() error {
 func (d *Driver) Create(id string, parent string) (retErr error) {
 	dir := d.dir(id)
 
-	rootUid, rootGid, err := idtools.GetRootUidGid(d.uidMaps, d.gidMaps)
+	rootUID, rootGID, err := idtools.GetRootUIDGID(d.uidMaps, d.gidMaps)
 	if err != nil {
 		return err
 	}
-	if err := idtools.MkdirAllAs(path.Dir(dir), 0700, rootUid, rootGid); err != nil {
+	if err := idtools.MkdirAllAs(path.Dir(dir), 0700, rootUID, rootGID); err != nil {
 		return err
 	}
-	if err := idtools.MkdirAs(dir, 0700, rootUid, rootGid); err != nil {
+	if err := idtools.MkdirAs(dir, 0700, rootUID, rootGID); err != nil {
 		return err
 	}
 
@@ -253,7 +253,7 @@ func (d *Driver) Create(id string, parent string) (retErr error) {
 
 	// Toplevel images are just a "root" dir
 	if parent == "" {
-		if err := idtools.MkdirAs(path.Join(dir, "root"), 0755, rootUid, rootGid); err != nil {
+		if err := idtools.MkdirAs(path.Join(dir, "root"), 0755, rootUID, rootGID); err != nil {
 			return err
 		}
 		return nil
@@ -276,7 +276,7 @@ func (d *Driver) Create(id string, parent string) (retErr error) {
 		if err := os.Mkdir(path.Join(dir, "work"), 0700); err != nil {
 			return err
 		}
-		if err := idtools.MkdirAs(path.Join(dir, "merged"), 0700, rootUid, rootGid); err != nil {
+		if err := idtools.MkdirAs(path.Join(dir, "merged"), 0700, rootUID, rootGID); err != nil {
 			return err
 		}
 		if err := ioutil.WriteFile(path.Join(dir, "lower-id"), []byte(parent), 0666); err != nil {
@@ -309,7 +309,7 @@ func (d *Driver) Create(id string, parent string) (retErr error) {
 	if err := os.Mkdir(path.Join(dir, "work"), 0700); err != nil {
 		return err
 	}
-	if err := idtools.MkdirAs(path.Join(dir, "merged"), 0700, rootUid, rootGid); err != nil {
+	if err := idtools.MkdirAs(path.Join(dir, "merged"), 0700, rootUID, rootGID); err != nil {
 		return err
 	}
 
@@ -451,7 +451,7 @@ func (d *Driver) ApplyDiff(id string, parent string, diff archive.Reader) (size 
 		return 0, err
 	}
 
-	options := &archive.TarOptions{UidMaps: d.uidMaps, GidMaps: d.gidMaps}
+	options := &archive.TarOptions{UIDMaps: d.uidMaps, GIDMaps: d.gidMaps}
 	if size, err = chrootarchive.ApplyUncompressedLayer(tmpRootDir, diff, options); err != nil {
 		return 0, err
 	}

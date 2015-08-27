@@ -194,12 +194,12 @@ func (d *Driver) createUTS(container *configs.Config, c *execdriver.Command) err
 }
 
 func (d *Driver) setupRemappedRoot(container *configs.Config, c *execdriver.Command) error {
-	if c.RemappedRoot.Uid == 0 {
+	if c.RemappedRoot.UID == 0 {
 		container.Namespaces.Remove(configs.NEWUSER)
 		return nil
 	}
 
-	uidMaps, gidMaps, err := idtools.CreateIDMapsForRoot(c.RemappedRoot.Uid, c.RemappedRoot.Gid)
+	uidMaps, gidMaps, err := idtools.CreateIDMapsForRoot(c.RemappedRoot.UID, c.RemappedRoot.GID)
 	if err != nil {
 		return err
 	}
@@ -217,8 +217,8 @@ func (d *Driver) setupRemappedRoot(container *configs.Config, c *execdriver.Comm
 	container.GidMappings = cgidMaps
 
 	for _, node := range container.Devices {
-		node.Uid = uint32(c.RemappedRoot.Uid)
-		node.Gid = uint32(c.RemappedRoot.Gid)
+		node.Uid = uint32(c.RemappedRoot.UID)
+		node.Gid = uint32(c.RemappedRoot.GID)
 	}
 	//HACK HACK HACK
 	// clear readonly for cgroup

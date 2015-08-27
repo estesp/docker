@@ -164,7 +164,7 @@ func (d *Driver) Remove(id string) error {
 func (d *Driver) Get(id, mountLabel string) (string, error) {
 	mp := path.Join(d.home, "mnt", id)
 
-	uid, gid, err := idtools.GetRootUidGid(d.uidMaps, d.gidMaps)
+	uid, gid, err := idtools.GetRootUIDGID(d.uidMaps, d.gidMaps)
 	if err != nil {
 		return "", err
 	}

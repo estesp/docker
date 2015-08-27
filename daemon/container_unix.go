@@ -281,10 +281,10 @@ func populateCommand(c *Container, env []string) error {
 	processConfig.Env = env
 
 	remappedRoot := &execdriver.User{}
-	rootUid, rootGid := c.daemon.GetRemappedUidGid()
-	if rootUid != 0 {
-		remappedRoot.Uid = rootUid
-		remappedRoot.Gid = rootGid
+	rootUID, rootGID := c.daemon.GetRemappedUIDGID()
+	if rootUID != 0 {
+		remappedRoot.UID = rootUID
+		remappedRoot.GID = rootGID
 	}
 
 	c.command = &execdriver.Command{

@@ -40,7 +40,7 @@ func Size(dir string) (size int64, err error) {
 	return
 }
 
-// Move all contents of a directory to a subdirectory underneath the original path
+// MoveDirToSubdir moves all contents of a directory to a subdirectory underneath the original path
 func MoveDirToSubdir(oldpath, subdir string) error {
 
 	infos, err := ioutil.ReadDir(oldpath)

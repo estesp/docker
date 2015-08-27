@@ -183,12 +183,12 @@ func Build(d *daemon.Daemon, buildConfig *Config) error {
 	defer context.Close()
 
 	var defaultArchiver *archive.Archiver
-	uidMaps, gidMaps := d.GetUidGidMaps()
+	uidMaps, gidMaps := d.GetUIDGIDMaps()
 	if uidMaps != nil || gidMaps != nil {
 		defaultArchiver = &archive.Archiver{
 			Untar:   chrootarchive.Untar,
-			UidMaps: uidMaps,
-			GidMaps: gidMaps,
+			UIDMaps: uidMaps,
+			GIDMaps: gidMaps,
 		}
 	}
 

@@ -158,8 +158,8 @@ type Mount struct {
 
 // User contains the uid and gid representing a Unix user
 type User struct {
-	Uid int `json:"root_uid"`
-	Gid int `json:"root_gid"`
+	UID int `json:"root_uid"`
+	GID int `json:"root_gid"`
 }
 
 // ProcessConfig describes a process that will be run inside a container.

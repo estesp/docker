@@ -61,7 +61,7 @@ func setHeaderForSpecialDevice(hdr *tar.Header, ta *tarAppender, name string, st
 	return
 }
 
-func getFileUidGid(stat interface{}) (int, int, error) {
+func getFileUIDGID(stat interface{}) (int, int, error) {
 	s, ok := stat.(*syscall.Stat_t)
 
 	if !ok {

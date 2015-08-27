@@ -65,7 +65,7 @@ func handleLChmod(hdr *tar.Header, path string, hdrInfo os.FileInfo) error {
 	return nil
 }
 
-func getFileUidGid(stat interface{}) (int, int, error) {
+func getFileUIDGID(stat interface{}) (int, int, error) {
 	// no notion of file ownership mapping yet on Windows
 	return 0, 0, nil
 }

@@ -159,19 +159,19 @@ func UnpackLayer(dest string, layer Reader, options *TarOptions) (size int64, er
 
 			//if options has a specific uid/gid, then set the hdr uid/gid so that
 			//the Lchown sets the ownership as requested
-			if options.UidMaps != nil {
-				xUid, err := idtools.TranslateIDToHost(srcHdr.Uid, options.UidMaps)
+			if options.UIDMaps != nil {
+				xUID, err := idtools.TranslateIDToHost(srcHdr.Uid, options.UIDMaps)
 				if err != nil {
 					return 0, err
 				}
-				srcHdr.Uid = xUid
+				srcHdr.Uid = xUID
 			}
-			if options.GidMaps != nil {
-				xGid, err := idtools.TranslateIDToHost(srcHdr.Gid, options.GidMaps)
+			if options.GIDMaps != nil {
+				xGID, err := idtools.TranslateIDToHost(srcHdr.Gid, options.GIDMaps)
 				if err != nil {
 					return 0, err
 				}
-				srcHdr.Gid = xGid
+				srcHdr.Gid = xGID
 			}
 			if err := createTarFile(path, dest, srcHdr, srcData, true, nil); err != nil {
 				return 0, err
