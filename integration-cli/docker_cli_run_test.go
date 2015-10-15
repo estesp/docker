@@ -1208,14 +1208,6 @@ func (s *DockerSuite) TestRunResolvconfUpdate(c *check.C) {
 		c.Fatal(err)
 	}
 
-	// This test case is meant to test monitoring resolv.conf when it is
-	// a regular file not a bind mounc. So we unmount resolv.conf and replace
-	// it with a file containing the original settings.
-	cmd := exec.Command("umount", "/etc/resolv.conf")
-	if _, err = runCommand(cmd); err != nil {
-		c.Fatal(err)
-	}
-
 	//cleanup
 	defer func() {
 		if err := ioutil.WriteFile("/etc/resolv.conf", resolvConfSystem, 0644); err != nil {
@@ -1248,10 +1240,6 @@ func (s *DockerSuite) TestRunResolvconfUpdate(c *check.C) {
 		c.Fatalf("Restarted container does not have updated resolv.conf; expected %q, got %q", tmpResolvConf, string(containerResolv))
 	}
 
-	/*	//make a change to resolv.conf (in this case replacing our tmp copy with orig copy)
-		if err := ioutil.WriteFile("/etc/resolv.conf", resolvConfSystem, 0644); err != nil {
-						c.Fatal(err)
-								} */
 	//2. test that a restarting container does not receive resolv.conf updates
 	//   if it modified the container copy of the starting point resolv.conf
 	dockerCmd(c, "run", "--name='second'", "busybox", "sh", "-c", "echo 'search mylittlepony.com' >>/etc/resolv.conf")
@@ -1333,46 +1321,6 @@ func (s *DockerSuite) TestRunResolvconfUpdate(c *check.C) {
 	if !bytes.Equal(containerResolv, []byte(expected)) {
 		c.Fatalf("Container does not have cleaned/replaced DNS in resolv.conf; expected %q, got %q", expected, string(containerResolv))
 	}
-
-	//6. Test that replacing (as opposed to modifying) resolv.conf triggers an update
-	//   of containers' resolv.conf.
-
-	// Restore the original resolv.conf
-	if err := ioutil.WriteFile("/etc/resolv.conf", resolvConfSystem, 0644); err != nil {
-		c.Fatal(err)
-	}
-
-	// Run the container so it picks up the old settings
-	dockerCmd(c, "run", "--name='third'", "busybox", "true")
-	containerID3, err := getIDByName("third")
-	if err != nil {
-		c.Fatal(err)
-	}
-
-	// Create a modified resolv.conf.aside and override resolv.conf with it
-	bytesResolvConf = []byte(tmpResolvConf)
-	if err := ioutil.WriteFile("/etc/resolv.conf.aside", bytesResolvConf, 0644); err != nil {
-		c.Fatal(err)
-	}
-
-	err = os.Rename("/etc/resolv.conf.aside", "/etc/resolv.conf")
-	if err != nil {
-		c.Fatal(err)
-	}
-
-	// start the container again to pickup changes
-	dockerCmd(c, "start", "third")
-
-	// check for update in container
-	containerResolv, err = readContainerFile(containerID3, "resolv.conf")
-	if err != nil {
-		c.Fatal(err)
-	}
-	if !bytes.Equal(containerResolv, bytesResolvConf) {
-		c.Fatalf("Stopped container does not have updated resolv.conf; expected\n%q\n got\n%q", tmpResolvConf, string(containerResolv))
-	}
-
-	//cleanup, restore original resolv.conf happens in defer func()
 }
 
 func (s *DockerSuite) TestRunAddHost(c *check.C) {
