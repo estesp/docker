@@ -433,14 +433,11 @@ func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *containertypes.
 		if hostConfig.Privileged {
 			return warnings, fmt.Errorf("Privileged mode is incompatible with user namespaces")
 		}
-		if hostConfig.NetworkMode.IsHost() || hostConfig.NetworkMode.IsContainer() {
+		if hostConfig.NetworkMode.IsHost() {
 			return warnings, fmt.Errorf("Cannot share the host or a container's network namespace when user namespaces are enabled")
 		}
 		if hostConfig.PidMode.IsHost() {
 			return warnings, fmt.Errorf("Cannot share the host PID namespace when user namespaces are enabled")
-		}
-		if hostConfig.IpcMode.IsContainer() {
-			return warnings, fmt.Errorf("Cannot share a container's IPC namespace when user namespaces are enabled")
 		}
 		if hostConfig.ReadonlyRootfs {
 			return warnings, fmt.Errorf("Cannot use the --read-only option when user namespaces are enabled")
@@ -883,6 +880,8 @@ func setupDaemonRoot(config *Config, rootDir string, rootUID, rootGID int) error
 		}
 	} else if os.IsNotExist(err) {
 		// no root exists yet, create it 0711 with root:root ownership
+		// (the execute bit on group/other is to enable user namespaced process access to
+		// container filesystems)
 		if err := os.MkdirAll(rootDir, 0711); err != nil {
 			return err
 		}
