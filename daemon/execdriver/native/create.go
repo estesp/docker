@@ -146,6 +146,11 @@ func (d *Driver) createNetwork(container *configs.Config, c *execdriver.Command,
 		}
 
 		container.Namespaces.Add(configs.NEWNET, state.NamespacePaths[configs.NEWNET])
+		if c.RemappedRoot.UID != 0 {
+			// if user namespaces are enabled, then we also want to share the user namespace of
+			// the container whose network we are wanting to share
+			container.Namespaces.Add(configs.NEWUSER, state.NamespacePaths[configs.NEWUSER])
+		}
 		return nil
 	}
 
@@ -196,6 +201,11 @@ func (d *Driver) createIpc(container *configs.Config, c *execdriver.Command) err
 			return err
 		}
 		container.Namespaces.Add(configs.NEWIPC, state.NamespacePaths[configs.NEWIPC])
+		if c.RemappedRoot.UID != 0 {
+			// if user namespaces are enabled, then we also want to share the user namespace of
+			// the container whose IPC space we are wanting to share
+			container.Namespaces.Add(configs.NEWUSER, state.NamespacePaths[configs.NEWUSER])
+		}
 	}
 
 	return nil

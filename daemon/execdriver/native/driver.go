@@ -140,11 +140,16 @@ func (d *Driver) Run(c *execdriver.Command, pipes *execdriver.Pipes, hooks execd
 		return execdriver.ExitStatus{ExitCode: -1}, err
 	}
 
+	user := c.ProcessConfig.User
+	// if there is no setting for the default user, then default to root uid/gid
+	if user == "" {
+		user = "0:0"
+	}
 	p := &libcontainer.Process{
 		Args: append([]string{c.ProcessConfig.Entrypoint}, c.ProcessConfig.Arguments...),
 		Env:  c.ProcessConfig.Env,
 		Cwd:  c.WorkingDir,
-		User: c.ProcessConfig.User,
+		User: user,
 	}
 
 	wg := sync.WaitGroup{}
