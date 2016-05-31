@@ -1,6 +1,7 @@
 package container
 
 import (
+	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/engine-api/types/strslice"
 	"github.com/docker/go-connections/nat"
 )
@@ -34,4 +35,6 @@ type Config struct {
 	OnBuild         []string              // ONBUILD metadata that were defined on the image Dockerfile
 	Labels          map[string]string     // List of labels set to this container
 	StopSignal      string                `json:",omitempty"` // Signal to stop a container
+	UIDMaps         []idtools.IDMap       `json:",omitempty"` // UID custom mappings for container
+	GIDMaps         []idtools.IDMap       `json:",omitempty"` // GID custom mappings for container
 }
