@@ -317,6 +317,7 @@ type serviceOptions struct {
 	logDriver logDriverOptions
 
 	healthcheck healthCheckOptions
+	secrets     opts.SecretOpt
 }
 
 func newServiceOptions() *serviceOptions {
@@ -380,6 +381,7 @@ func (opts *serviceOptions) ToService() (swarm.ServiceSpec, error) {
 					Options:     opts.dnsOptions.GetAll(),
 				},
 				StopGracePeriod: opts.stopGrace.Value(),
+				Secrets:         nil,
 			},
 			Networks:      convertNetworks(opts.networks),
 			Resources:     opts.resources.ToResourceRequirements(),
@@ -530,4 +532,7 @@ const (
 	flagHealthRetries         = "health-retries"
 	flagHealthTimeout         = "health-timeout"
 	flagNoHealthcheck         = "no-healthcheck"
+	flagSecret                = "secret"
+	flagSecretAdd             = "secret-add"
+	flagSecretRemove          = "secret-rm"
 )
